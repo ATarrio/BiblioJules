@@ -1,0 +1,11 @@
+# Desktop (Qt) front-end.
+#
+# The desktop app reuses the same SQLAlchemy models, SQLite database and
+# service layer as the web app, so everything in requirements.txt is required
+# too. Install both:
+#
+#     pip install -r requirements.txt -r requirements-desktop.txt
+#
+# PySide6 ships prebuilt wheels for Windows, macOS and Linux and bundles the
+# matching Qt runtime, so no system Qt install is needed.
+PySide6>=6.7

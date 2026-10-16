@@ -66,6 +66,42 @@ automatically on first run at `data/library.db`.
 
 ---
 
+## Desktop app (optional, no browser)
+
+There is also a native **Qt (PySide6)** desktop front-end for when you'd rather
+not run a browser. It talks to the **same SQLite database** and reuses the same
+service layer as the web app, so you can switch between the two freely — no
+import/export needed (just don't run both against the same DB at the same
+instant).
+
+```bash
+# Install the extra dependency (Qt + the rest)
+pip install -r requirements.txt -r requirements-desktop.txt
+
+# Launch it
+python desktop.py
+```
+
+PySide6 ships prebuilt wheels for **Windows, macOS and Linux** and bundles the
+matching Qt runtime, so there's no system Qt to install. The desktop app needs
+the same Python as the web app (installed in the same virtual environment).
+
+The window has a sidebar mirroring the web pages — **Dashboard, Catalog,
+Locations, Statuses, Discover** — with the same capabilities:
+
+- browse, search and filter the catalog; add/edit/delete books;
+- scan-and-lookup an ISBN (or search online and add to the wishlist);
+- lend and return books, with loan history;
+- manage the nested location tree and the customisable statuses.
+
+Because it opens the database file directly, `DATABASE_URL` must resolve to the
+same file for both front-ends. The default (`data/library.db`, absolute path)
+does; if you override `DATABASE_URL` in `.env` with a *relative* path it will
+resolve against the working directory you launch from, so prefer an absolute
+path there.
+
+---
+
 ## Using it
 
 1. **Set up your locations** (`Locations` page): add a room, then nest a
@@ -103,10 +139,20 @@ automatically on first run at `data/library.db`.
 │   │   ├── lookup.py      #   Discover search / prefill
 │   │   └── api.py         #   /api/... JSON API
 │   ├── templates/         # Jinja2 templates (+ reusable macros)
-│   └── static/            # CSS & JS
+│   ├── static/            # CSS & JS
+│   └── desktop/           # Qt (PySide6) desktop front-end
+│       ├── app.py         #   app bootstrap (create tables + seed, show window)
+│       ├── main_window.py #   sidebar + stacked views
+│       ├── dashboard.py  catalog.py  locations_view.py
+│       ├── statuses_view.py  discover.py
+│       ├── dialogs.py     #   add/edit book, lend, location, status dialogs
+│       ├── db.py  workers.py  util.py
+│       └── ...
 ├── migrations/            # Alembic migrations (schema evolution)
-├── run.py                 # Convenience launcher
+├── run.py                 # Web launcher
+├── desktop.py             # Desktop launcher
 ├── requirements.txt
+├── requirements-desktop.txt
 └── .env.example
 ```
 
