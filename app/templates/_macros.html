@@ -1,0 +1,88 @@
+{# Reusable UI macros #}
+
+{% macro scan_box(autofocus=false) %}
+  <form hx-post="/scan" hx-target="#modal-body" hx-swap="innerHTML" hx-indicator="#scan-spinner"
+        class="flex w-full flex-col gap-2 sm:flex-row">
+    <div class="relative flex-1">
+      <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6v12M8 6v12M12 6v12M16 6v12M20 6v12"/>
+      </svg>
+      <input type="text" name="isbn" inputmode="numeric" autocomplete="off"
+             {% if autofocus %}data-autofocus-scan{% endif %}
+             placeholder="Scan a barcode or type an ISBN…"
+             class="scan-input w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-11 pr-3 text-sm shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+    </div>
+    <button type="submit"
+            class="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700">
+      <svg id="scan-spinner" class="htmx-indicator h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      Look up
+    </button>
+  </form>
+{% endmacro %}
+
+{% macro status_badge(status, size='text-xs') %}
+  {% if status %}
+    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium {{ size }}"
+          style="background-color: {{ status.color }}22; color: {{ status.color }};">
+      {% if status.icon %}<span aria-hidden="true">{{ status.icon }}</span>{% endif %}{{ status.name }}
+    </span>
+  {% endif %}
+{% endmacro %}
+
+{% macro cover(book, classes='') %}
+  {% if book.cover_url %}
+    <img src="{{ book.cover_url }}" alt="Cover of {{ book.title }}" loading="lazy"
+         class="h-full w-full object-cover {{ classes }}">
+  {% else %}
+    <div class="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-100 to-slate-200 p-3 text-center dark:from-slate-800 dark:to-slate-900 {{ classes }}">
+      <svg class="h-8 w-8 text-slate-300 dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.25C10.5 5 8.5 4.5 6 4.5v13c2.5 0 4.5.5 6 1.75m0-13c1.5-1.25 3.5-1.75 6-1.75v13c-2.5 0-4.5.5-6 1.75m0-13v13"/>
+      </svg>
+      <span class="clamp-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">{{ book.title }}</span>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro book_card(book) %}
+  <a href="/books/{{ book.id }}"
+     class="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+    <div class="relative aspect-[2/3] w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+      {{ cover(book, 'transition duration-300 group-hover:scale-[1.03]') }}
+      {% if book.status %}
+        <div class="absolute left-2 top-2">{{ status_badge(book.status) }}</div>
+      {% endif %}
+    </div>
+    <div class="flex flex-1 flex-col gap-1 p-3">
+      <h3 class="clamp-2 text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100">{{ book.title }}</h3>
+      <p class="clamp-2 text-xs text-slate-500 dark:text-slate-400">{{ book.author_display }}</p>
+      <div class="mt-auto flex flex-col gap-1 pt-2 text-[11px] text-slate-400">
+        {% if book.location %}
+          <span class="inline-flex items-center gap-1">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.5 7-11a7 7 0 10-14 0c0 4.5 7 11 7 11z"/></svg>
+            {{ book.location.full_path }}
+          </span>
+        {% endif %}
+        {% set loan = book.active_loan %}
+        {% if loan %}
+          <span class="inline-flex items-center gap-1 font-medium {{ 'text-red-500' if loan.is_overdue else 'text-amber-500' }}">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            {{ loan.borrower_name }}{% if loan.due_at %} · due {{ loan.due_at|date }}{% endif %}
+          </span>
+        {% endif %}
+        {% if book.published_year %}<span>{{ book.published_year }}</span>{% endif %}
+      </div>
+    </div>
+  </a>
+{% endmacro %}
+
+{% macro empty_state(title, subtitle, action='') %}
+  <div class="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-slate-700">
+    <span class="text-4xl">📖</span>
+    <h3 class="mt-3 text-base font-semibold text-slate-700 dark:text-slate-200">{{ title }}</h3>
+    <p class="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">{{ subtitle }}</p>
+    {% if action %}<div class="mt-4">{{ action }}</div>{% endif %}
+  </div>
+{% endmacro %}

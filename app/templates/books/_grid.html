@@ -1,0 +1,18 @@
+{% import "_macros.html" as ui %}
+<div id="book-grid">
+  <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
+    {{ book_count }} {{ 'book' if book_count == 1 else 'books' }}
+  </p>
+  {% if books %}
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+      {% for book in books %}{{ ui.book_card(book) }}{% endfor %}
+    </div>
+  {% else %}
+    <div class="grid grid-cols-1">
+      {{ ui.empty_state(
+        'No books match',
+        'Try clearing the filters, or scan a new book to add it to your library.'
+      ) }}
+    </div>
+  {% endif %}
+</div>
