@@ -20,9 +20,12 @@ document.addEventListener('alpine:init', () => {
       if (title) this.modalTitle = title;
       this.modalOpen = true;
       document.body.classList.add('overflow-hidden');
-      // Give the swapped-in form focus (except for select buttons).
+      // Give the swapped-in form focus (prefer an explicit marker, e.g. the ISBN
+      // field when bulk-adding, otherwise the first usable input).
       requestAnimationFrame(() => {
-        const el = document.querySelector('#modal-body input:not([type=hidden]):not([disabled])');
+        const el =
+          document.querySelector('#modal-body [data-modal-autofocus]') ||
+          document.querySelector('#modal-body input:not([type=hidden]):not([disabled])');
         if (el) el.focus();
       });
     },
@@ -31,6 +34,12 @@ document.addEventListener('alpine:init', () => {
       document.body.classList.remove('overflow-hidden');
       const body = document.getElementById('modal-body');
       if (body) body.innerHTML = '<p class="py-10 text-center text-sm text-slate-400">Loading…</p>';
+      // If books were added while the form stayed open, the page behind is
+      // stale — reload once the modal is dismissed.
+      if (window.__libraryDirty) {
+        window.__libraryDirty = false;
+        window.location.reload();
+      }
     },
     notify(message) {
       this.error = message;
@@ -51,6 +60,12 @@ document.addEventListener('htmx:afterSwap', (event) => {
     }
     window.Alpine && Alpine.store('ui').open();
   }
+});
+
+// A bulk add fired a bookAdded event (HX-Trigger) — the page behind the modal
+// is now out of date, so remember to refresh it on close.
+document.addEventListener('bookAdded', () => {
+  window.__libraryDirty = true;
 });
 
 // Surface server errors as a small toast instead of a silent failure.

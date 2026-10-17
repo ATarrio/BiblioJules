@@ -198,7 +198,7 @@ class CatalogView(QWidget):
 
     # -- actions ------------------------------------------------------------ #
     def _add(self) -> None:
-        dialog = BookDialog(self)
+        dialog = BookDialog(self, on_bulk_save=self._bulk_create)
         if dialog.exec() != BookDialog.DialogCode.Accepted:
             return
         try:
@@ -208,6 +208,16 @@ class CatalogView(QWidget):
             QMessageBox.critical(self, "Could not save", str(exc))
             return
         self.on_change()
+
+    def _bulk_create(self, payload: dict) -> str | None:
+        """Persist one book from a keep-open add. Returns an error message or None."""
+        try:
+            with session_scope() as db:
+                library.create_book(db, payload)
+        except Exception as exc:  # noqa: BLE001
+            return str(exc)
+        self.on_change()
+        return None
 
     def _edit(self) -> None:
         book_id = self._require_selection()

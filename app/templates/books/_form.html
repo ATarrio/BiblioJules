@@ -24,8 +24,13 @@
       ✓ Found online. Check the details and choose a location.
     </div>
   {% endif %}
+  {% if added %}
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+      ✓ {{ added }} Location, status and notes were kept — scan or type the next ISBN.
+    </div>
+  {% endif %}
 
-  <form hx-post="{{ action }}" hx-target="#modal-body" hx-swap="innerHTML" class="space-y-4">
+  <form id="book-form" hx-post="{{ action }}" hx-target="#modal-body" hx-swap="innerHTML" class="space-y-4">
     <div class="flex flex-col gap-4 sm:flex-row">
       <!-- Cover preview -->
       <div class="mx-auto w-32 shrink-0 sm:mx-0" x-data="{ cover: {{ form.get('cover_url')|tojson }} }">
@@ -52,11 +57,21 @@
           <input name="authors" value="{{ form.get('authors') or '' }}" placeholder="Ursula K. Le Guin"
                  class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">ISBN</label>
-            <input name="isbn" value="{{ form.get('isbn') or '' }}"
-                   class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            <div class="flex gap-2">
+              <input name="isbn" value="{{ form.get('isbn') or '' }}"
+                     {% if not is_edit %}data-modal-autofocus{% endif %}
+                     onkeydown="if (event.key === 'Enter') { event.preventDefault(); }"
+                     hx-post="/scan" hx-trigger="keyup[key=='Enter' && this.value.trim() !== '']"
+                     hx-include="#book-form" hx-target="#modal-body" hx-swap="innerHTML"
+                     placeholder="Scan or type an ISBN…"
+                     class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+              <button type="button" hx-post="/scan" hx-include="#book-form"
+                      hx-target="#modal-body" hx-swap="innerHTML"
+                      class="whitespace-nowrap rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700">Look up</button>
+            </div>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Publisher</label>
@@ -119,6 +134,17 @@
     </div>
 
     <input type="hidden" name="source" value="{{ form.get('source') or 'manual' }}">
+
+    {% if not is_edit %}
+      <label class="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+        <input type="checkbox" name="keep_open" {{ 'checked' if form.get('keep_open') }}
+               class="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+        <span>
+          Keep this form open to add several books in a row
+          <span class="block text-xs text-slate-400">After each save the ISBN details are cleared; location, status and notes stay put.</span>
+        </span>
+      </label>
+    {% endif %}
 
     <div class="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
       <button type="button" @click="$store.ui.close()"

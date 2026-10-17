@@ -58,9 +58,17 @@ def _style_primary(box: QDialogButtonBox, role: QDialogButtonBox.StandardButton)
 class BookDialog(QDialog):
     """Add or edit a single book. Does not touch the DB; the caller saves."""
 
-    def __init__(self, parent: QWidget | None = None, *, book_id: int | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        book_id: int | None = None,
+        on_bulk_save: Callable[[dict], str | None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.book_id = book_id
+        self.on_bulk_save = on_bulk_save
+        self.keep_open: QCheckBox | None = None
         self._source: str | None = None
         self.setWindowTitle("Add book" if book_id is None else "Edit book")
         self.setMinimumWidth(620)
@@ -80,6 +88,7 @@ class BookDialog(QDialog):
         self.isbn.setPlaceholderText("Scan or type an ISBN, then press Look up")
         self.lookup_btn = QPushButton("Look up online")
         self.lookup_btn.clicked.connect(self._on_lookup_clicked)
+        self.isbn.returnPressed.connect(self._on_lookup_clicked)
         isbn_row = QHBoxLayout()
         isbn_row.addWidget(self.isbn, 1)
         isbn_row.addWidget(self.lookup_btn)
@@ -142,6 +151,14 @@ class BookDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(self.message)
+
+        if self.book_id is None:
+            self.keep_open = QCheckBox("Keep this dialog open so I can add several books in a row")
+            self.keep_open.setToolTip(
+                "After each save the ISBN details are cleared; the shelf, status and notes stay put."
+            )
+            layout.addWidget(self.keep_open)
+
         layout.addWidget(buttons)
 
     def _load_choices(self) -> None:
@@ -236,9 +253,51 @@ class BookDialog(QDialog):
         self.message.setText(f"Lookup failed: {message}")
 
     # -- result ------------------------------------------------------------- #
+    def _set_message(self, text: str, *, ok: bool = False) -> None:
+        self.message.setObjectName("Muted" if ok else "Hint")
+        self.message.setText(text)
+        style = self.message.style()
+        style.unpolish(self.message)
+        style.polish(self.message)
+
+    def _clear_for_next(self) -> None:
+        """Clear everything an ISBN lookup fills in, keeping the shelf/status/notes."""
+        for widget in (
+            self.isbn,
+            self.title,
+            self.subtitle,
+            self.authors,
+            self.publisher,
+            self.published_date,
+            self.year,
+            self.pages,
+            self.language,
+            self.cover_url,
+            self.description,
+        ):
+            if isinstance(widget, (QLineEdit, QPlainTextEdit)):
+                widget.clear()
+            else:  # QSpinBox
+                widget.setValue(0)
+        self._source = "manual"
+        self._set_message("Added. Scan or type the next ISBN.", ok=True)
+        self.isbn.setFocus()
+
     def _on_save(self) -> None:
         if not self.title.text().strip():
             self.message.setText("A title is required (it will be saved as 'Untitled' if blank).")
+        if (
+            self.book_id is None
+            and self.keep_open is not None
+            and self.keep_open.isChecked()
+            and self.on_bulk_save is not None
+        ):
+            error = self.on_bulk_save(self.data())
+            if error:
+                self._set_message(f"Could not save: {error}")
+                return
+            self._clear_for_next()
+            return
         self.accept()
 
     def data(self) -> dict:

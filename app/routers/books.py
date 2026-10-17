@@ -80,6 +80,27 @@ def form_context(db: Session, form: dict, **extra) -> dict:
     }
 
 
+# Fields a bulk-add carries from one book to the next (everything else on the
+# form comes from the ISBN lookup and is cleared): where it lives, its status,
+# any shared note, and whether the form should stay open.
+_STICKY_FIELDS = ("location_id", "status_id", "notes", "keep_open")
+
+
+def _sticky_fields(data: dict) -> dict:
+    sticky: dict = {}
+    for key in _STICKY_FIELDS:
+        value = data.get(key)
+        if value in (None, ""):
+            continue
+        if key.endswith("_id"):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue
+        sticky[key] = value
+    return sticky
+
+
 # --------------------------------------------------------------------------- #
 # Scanning / creating
 # --------------------------------------------------------------------------- #
@@ -88,16 +109,21 @@ async def scan(request: Request, db: Session = Depends(get_db)):
     """Receive a scanned/typed ISBN, look it up, return a prefilled form."""
     form = await _form_dict(request)
     raw = normalize_isbn(form.get("isbn", ""))
+    # Preserve the "sticky" choices when this lookup came from an open add form
+    # (the in-form Look up button includes them), so bulk-adding keeps working.
+    sticky = _sticky_fields(form)
 
     if not raw:
         return templates.TemplateResponse(
             request,
             "books/_form.html",
-            form_context(db, {"isbn": ""}, error="Please scan or type an ISBN."),
+            form_context(db, {"isbn": "", **sticky}, error="Please scan or type an ISBN."),
         )
 
     existing = library.find_by_isbn(db, raw)
     if existing:
+        # An ISBN already in the library opens as an edit form; keep its own
+        # location/status/notes rather than the bulk form's sticky choices.
         return templates.TemplateResponse(
             request,
             "books/_form.html",
@@ -115,7 +141,7 @@ async def scan(request: Request, db: Session = Depends(get_db)):
             "books/_form.html",
             form_context(
                 db,
-                {"isbn": raw},
+                {"isbn": raw, **sticky},
                 warning=f"“{raw}” is not a valid ISBN. You can still fill it in by hand.",
             ),
         )
@@ -127,13 +153,15 @@ async def scan(request: Request, db: Session = Depends(get_db)):
             "books/_form.html",
             form_context(
                 db,
-                {"isbn": raw, "source": "manual"},
+                {"isbn": raw, "source": "manual", **sticky},
                 warning="No catalogue found that ISBN online. Enter the details by hand.",
             ),
         )
 
     return templates.TemplateResponse(
-        request, "books/_form.html", form_context(db, book_to_form(data), looked_up=True)
+        request,
+        "books/_form.html",
+        form_context(db, {**book_to_form(data), **sticky}, looked_up=True),
     )
 
 
@@ -151,6 +179,18 @@ def scan_manual(request: Request, db: Session = Depends(get_db)):
 async def create_book(request: Request, db: Session = Depends(get_db)):
     data = await _form_dict(request)
     book = library.create_book(db, data)
+
+    # Bulk mode: keep the modal open with a cleared form so the next book can be
+    # scanned straight away, carrying over the shelf, status and notes.
+    if data.get("keep_open"):
+        cleared = {"source": "manual", **_sticky_fields(data)}
+        return templates.TemplateResponse(
+            request,
+            "books/_form.html",
+            form_context(db, cleared, added=f"Added “{book.title}”."),
+            headers={"HX-Trigger": "bookAdded"},
+        )
+
     return _redirect(request, f"/books/{book.id}")
 
 

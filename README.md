@@ -20,6 +20,10 @@ SQLite by default, but the database layer is fully abstracted so switching to
   Type the ISBN by hand and it works exactly the same.
 - **Add by hand.** Any book without an ISBN (or unknown online) can be entered
   manually with the same form.
+- **Bulk add.** Tick *Keep this form open* and the add form stays up after each
+  save: the ISBN details are cleared, while the location, status and notes stay
+  put, so a whole shelf can be scanned in one sitting. The desktop app has the
+  same option on its add dialog.
 - **Hierarchical locations.** Model your home as you like — rooms → bookcases
   → shelves → boxes. Pick a location from an indented list when adding a book
   instead of typing it out.
