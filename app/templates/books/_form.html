@@ -136,12 +136,15 @@
     <input type="hidden" name="source" value="{{ form.get('source') or 'manual' }}">
 
     {% if not is_edit %}
-      <label class="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
-        <input type="checkbox" name="keep_open" {{ 'checked' if form.get('keep_open') }}
-               class="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
-        <span>
+      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+        <span class="text-sm text-slate-600 dark:text-slate-300">
           Keep this form open to add several books in a row
           <span class="block text-xs text-slate-400">After each save the ISBN details are cleared; location, status and notes stay put.</span>
+        </span>
+        <span class="relative inline-flex shrink-0 items-center">
+          <input type="checkbox" name="keep_open" class="peer sr-only" {{ 'checked' if form.get('keep_open') }}>
+          <span class="h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 dark:bg-slate-600 dark:peer-focus-visible:ring-offset-slate-900"></span>
+          <span class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
         </span>
       </label>
     {% endif %}

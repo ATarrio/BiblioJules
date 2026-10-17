@@ -32,6 +32,7 @@ from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from .cover import CoverImage
 from .db import session_scope
+from .switch import Switch
 from .util import (
     display_status,
     fill_combo,
@@ -153,7 +154,7 @@ class BookDialog(QDialog):
         layout.addWidget(self.message)
 
         if self.book_id is None:
-            self.keep_open = QCheckBox("Keep this dialog open so I can add several books in a row")
+            self.keep_open = Switch("Keep open to add several books in a row")
             self.keep_open.setToolTip(
                 "After each save the ISBN details are cleared; the shelf, status and notes stay put."
             )
