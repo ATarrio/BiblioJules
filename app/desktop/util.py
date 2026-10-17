@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QLabel,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -103,6 +105,65 @@ def card() -> QFrame:
     frame = QFrame()
     frame.setObjectName("Card")
     return frame
+
+
+class ColumnSort:
+    """Clickable table headers that sort a view's rows, toggling direction.
+
+    Views keep their rows in a list and re-render whenever this changes; the
+    class only tracks the active column and direction and can order a list of
+    rows using the per-column key functions it was given.
+    """
+
+    def __init__(
+        self,
+        table: QTableWidget,
+        keys: dict[int, Callable[[Any], Any]],
+        on_change: Callable[[], None],
+    ) -> None:
+        self._table = table
+        self._keys = keys
+        self._on_change = on_change
+        self.column = -1
+        self.descending = False
+        header = table.horizontalHeader()
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(False)
+        header.sectionClicked.connect(self.select)
+
+    def select(self, column: int) -> None:
+        """Sort by ``column``; clicking the active column flips the direction."""
+        if column not in self._keys:
+            return
+        if column == self.column:
+            self.descending = not self.descending
+        else:
+            self.column = column
+            self.descending = False
+        self._update_indicator()
+        self._on_change()
+
+    def clear(self) -> None:
+        self.column = -1
+        self.descending = False
+        self._update_indicator()
+
+    def apply(self, rows: list[Any]) -> list[Any]:
+        """Return ``rows`` ordered according to the active column."""
+        if self.column < 0:
+            return rows
+        return sorted(rows, key=self._keys[self.column], reverse=self.descending)
+
+    def _update_indicator(self) -> None:
+        header = self._table.horizontalHeader()
+        if self.column < 0:
+            header.setSortIndicatorShown(False)
+            return
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(
+            self.column,
+            Qt.SortOrder.DescendingOrder if self.descending else Qt.SortOrder.AscendingOrder,
+        )
 
 
 def style_badge(label: QLabel, text: str, color: str) -> None:

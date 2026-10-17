@@ -38,6 +38,9 @@ SQLite by default, but the database layer is fully abstracted so switching to
 - **Filter & search.** Filter by status, location (including everything nested
   underneath), author, publisher, and loan state; search across title, author,
   publisher and ISBN.
+- **Sortable lists.** Click a column header — in the web catalog grid or the
+  desktop Catalog, Discover and Statuses tables — to sort by that column, and
+  click it again to flip between ascending and descending.
 - **Peek at a book.** Click a book tile (or double-click a row in the desktop
   app) for a pop-up with its full details — cover included — plus a one-click
   shortcut to edit them.
@@ -101,6 +104,7 @@ The window has a sidebar mirroring the web pages — **Dashboard, Catalog,
 Locations, Statuses, Discover** — with the same capabilities:
 
 - browse, search and filter the catalog; add/edit/delete books;
+- sort any list by clicking its column headers;
 - scan-and-lookup an ISBN (or search online and add to the wishlist);
 - lend and return books, with loan history;
 - manage the nested location tree and the customisable statuses.
@@ -187,7 +191,9 @@ existing code stays untouched. That's what keeps this easy to grow.
   built-ins, `is_default` marks the status new books get.
 - **Loan** — a period during which a book was out: borrower, lent/due/returned
   dates, notes. An *active* loan has no return date.
-- **Author/Publisher** — normalised so you can filter and reuse them.
+- **Author/Publisher** — normalised so you can filter and reuse them. Rows that
+  no longer have any book are pruned automatically (on book delete/edit and at
+  startup), so the dashboard counts and filter lists stay accurate.
 
 ---
 

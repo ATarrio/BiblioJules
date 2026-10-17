@@ -140,6 +140,8 @@ def create_book(db: Session, data: dict) -> Book:
 def update_book(db: Session, book: Book, data: dict) -> Book:
     apply_book_data(db, book, data)
     db.commit()
+    # Editing a book's authors/publisher can strand the previous ones.
+    prune_orphans(db)
     db.refresh(book)
     return book
 
@@ -150,6 +152,22 @@ def get_book(db: Session, book_id: int) -> Book | None:
 
 def delete_book(db: Session, book: Book) -> None:
     db.delete(book)
+    # Flush so the book's author links are gone before we look for orphans.
+    db.flush()
+    prune_orphans(db)
+
+
+def prune_orphans(db: Session) -> None:
+    """Delete authors and publishers no longer linked to any book.
+
+    They are created on the fly from book metadata, so once their last book is
+    gone they are just clutter — left behind they inflate the dashboard counts
+    and linger in the filter dropdowns.
+    """
+    for author in db.scalars(select(Author).where(~Author.books.any())).all():
+        db.delete(author)
+    for publisher in db.scalars(select(Publisher).where(~Publisher.books.any())).all():
+        db.delete(publisher)
     db.commit()
 
 
@@ -170,6 +188,7 @@ def query_books(
     publisher_id: int | None = None,
     loaned: str | None = None,  # "loaned" | "available" | None
     sort: str = "recent",
+    descending: bool | None = None,  # None keeps each sort's natural direction
 ) -> list[Book]:
     stmt = select(Book).options(*BOOK_LOAD_OPTIONS)
 
@@ -203,15 +222,34 @@ def query_books(
         stmt = stmt.where(~Book.loans.any(Loan.returned_at.is_(None)))
 
     if sort == "title":
-        stmt = stmt.order_by(func.lower(Book.title).asc())
-    elif sort == "author":
-        stmt = stmt.order_by(func.lower(Book.title).asc())
+        order = func.lower(Book.title)
+        stmt = stmt.order_by(order.desc() if descending else order.asc())
     elif sort == "year":
-        stmt = stmt.order_by(Book.published_year.desc().nullslast())
+        # Newest first by default; the caller may flip the direction.
+        newest_first = True if descending is None else descending
+        column = Book.published_year
+        stmt = stmt.order_by(
+            column.desc().nullslast() if newest_first else column.asc().nullslast()
+        )
+    elif sort == "author":
+        # Author names live on the other side of a many-to-many join, so sort
+        # the loaded rows in Python (cheap for a personal library).
+        pass
     else:  # recent
-        stmt = stmt.order_by(Book.created_at.desc(), Book.id.desc())
+        newest_first = True if descending is None else descending
+        stmt = stmt.order_by(
+            Book.created_at.desc() if newest_first else Book.created_at.asc(),
+            Book.id.desc() if newest_first else Book.id.asc(),
+        )
 
-    return list(db.scalars(stmt).unique().all())
+    books = list(db.scalars(stmt).unique().all())
+    if sort == "author":
+        def by_author(book: Book) -> tuple[str, str]:
+            names = [author.name.casefold() for author in book.authors if author.name]
+            return (min(names) if names else "", (book.title or "").casefold())
+
+        books.sort(key=by_author, reverse=bool(descending))
+    return books
 
 
 # --------------------------------------------------------------------------- #

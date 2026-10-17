@@ -26,7 +26,7 @@ from ..i18n import _
 from ..services import library
 from ..services.serializers import book_to_dict
 from .db import session_scope
-from .util import card, fill_combo, location_choices, page_header, status_choices
+from .util import ColumnSort, card, fill_combo, location_choices, page_header, status_choices
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog
 
 # (value, English source label); translated when the combo is built.
@@ -92,6 +92,21 @@ class CatalogView(QWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemDoubleClicked.connect(lambda *_: self._details())
 
+        # Clicking a column header orders the rows (again to flip ascending/descending).
+        self._rows: list[dict] = []
+        self._sort = ColumnSort(
+            self.table,
+            {
+                0: lambda row: (row["title"] or "").casefold(),
+                1: lambda row: ", ".join(row.get("authors") or []).casefold(),
+                2: lambda row: self._status_text(row).casefold(),
+                3: lambda row: ((row.get("location") or {}).get("full_path") or "").casefold(),
+                4: lambda row: (row.get("published_year") is None, row.get("published_year") or 0),
+                5: lambda row: self._loan_text(row).casefold(),
+            },
+            self._render_rows,
+        )
+
         add_btn = QPushButton("＋  " + _("Add book"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add)
@@ -129,6 +144,17 @@ class CatalogView(QWidget):
         layout.addWidget(self.table, 1)
         layout.addLayout(actions)
 
+        # Changing a filter (or the "order by" combo) refreshes the list at once.
+        self.status.currentIndexChanged.connect(self.reload_books)
+        self.location.currentIndexChanged.connect(self.reload_books)
+        self.loaned.currentIndexChanged.connect(self.reload_books)
+        self.sort.currentIndexChanged.connect(self._on_sort_changed)
+
+    def _on_sort_changed(self, *_: object) -> None:
+        # The combo sets the base order; hand sorting back to it.
+        self._sort.clear()
+        self.reload_books()
+
     # -- data --------------------------------------------------------------- #
     def refresh(self) -> None:
         self._reload_choices()
@@ -147,7 +173,7 @@ class CatalogView(QWidget):
 
     def reload_books(self) -> None:
         with session_scope() as db:
-            rows = [
+            self._rows = [
                 book_to_dict(book)
                 for book in library.query_books(
                     db,
@@ -158,27 +184,37 @@ class CatalogView(QWidget):
                     sort=self.sort.currentData() or "recent",
                 )
             ]
+        self._render_rows()
 
+    @staticmethod
+    def _status_text(row: dict) -> str:
+        status = row.get("status") or {}
+        return i18n.status_label_from(status.get("slug"), status.get("name"))
+
+    @staticmethod
+    def _loan_text(row: dict) -> str:
+        loan = row.get("active_loan")
+        if not loan:
+            return ""
+        text = _("→ %s") % loan["borrower_name"]
+        if loan.get("is_overdue"):
+            text += _("  (overdue)")
+        return text
+
+    def _render_rows(self) -> None:
+        rows = self._sort.apply(self._rows)
         self.table.setRowCount(len(rows))
         count = len(rows)
         self.summary.setText(i18n.ngettext("%d book", "%d books", count) % count)
         for row_index, row in enumerate(rows):
             status = row.get("status") or {}
-            loan = row.get("active_loan")
-            if loan:
-                loan_text = _("→ %s") % loan["borrower_name"]
-                if loan.get("is_overdue"):
-                    loan_text += _("  (overdue)")
-            else:
-                loan_text = ""
-
             values = [
                 row["title"],
                 ", ".join(row.get("authors") or []) or _("Unknown author"),
-                i18n.status_label_from(status.get("slug"), status.get("name")),
+                self._status_text(row),
                 (row.get("location") or {}).get("full_path") or "",
                 str(row.get("published_year") or ""),
-                loan_text,
+                self._loan_text(row),
             ]
             for column, text in enumerate(values):
                 item = QTableWidgetItem(text)

@@ -13,6 +13,7 @@ from typing import Iterator
 from sqlalchemy.orm import Session
 
 from ..database import Base, SessionLocal, engine
+from ..services.library import prune_orphans
 from ..services.seed import seed_defaults
 
 
@@ -40,3 +41,5 @@ def initialize_database() -> None:
     Base.metadata.create_all(bind=engine)
     with session_scope() as db:
         seed_defaults(db)
+        # Clear out authors/publishers left behind by earlier book deletions.
+        prune_orphans(db)

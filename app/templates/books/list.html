@@ -19,7 +19,7 @@
   {{ ui.scan_box(autofocus=true) }}
 </div>
 
-<form action="/books" method="get"
+<form id="filters" action="/books" method="get"
       hx-get="/books" hx-target="#book-grid" hx-swap="innerHTML"
       hx-trigger="change, keyup changed delay:400ms, submit"
       hx-push-url="true" hx-indicator="#filter-spinner"
@@ -64,12 +64,9 @@
     <option value="available" {{ 'selected' if filters.loaned == 'available' }}>{{ _('Available only') }}</option>
   </select>
 
-  <select name="sort" class="rounded-lg border border-slate-300 bg-white py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-    {% set sorts = [('recent', _('Recently added')), ('title', _('Title A–Z')), ('author', _('Author A–Z')), ('year', _('Newest first'))] %}
-    {% for value, label in sorts %}
-      <option value="{{ value }}" {{ 'selected' if filters.sort == value }}>{{ label }}</option>
-    {% endfor %}
-  </select>
+  {# Current sort, kept in sync with the grid by app.js so filter changes don't reset it. #}
+  <input type="hidden" name="sort" value="{{ filters.sort }}">
+  <input type="hidden" name="dir" value="{{ filters.dir or '' }}">
 
   <div class="flex items-center gap-3">
     <a href="/books" class="text-sm font-medium text-slate-500 hover:text-brand-600">{{ _('Clear filters') }}</a>

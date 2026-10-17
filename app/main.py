@@ -15,6 +15,7 @@ from .config import settings
 from .database import Base, SessionLocal, engine
 from .i18n import LanguageMiddleware, _
 from .routers import api, books, health, locations, lookup, pages, statuses
+from .services.library import prune_orphans
 from .services.seed import seed_defaults
 from .templating import templates
 
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_defaults(db)
+        # Clear out authors/publishers left behind by earlier book deletions.
+        prune_orphans(db)
     finally:
         db.close()
 

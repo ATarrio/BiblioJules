@@ -24,7 +24,7 @@ from ..i18n import _
 from ..services import library
 from ..services.isbn_lookup import search_books
 from .db import session_scope
-from .util import card, page_header
+from .util import ColumnSort, card, page_header
 from .workers import run_async
 
 _RESULT = Qt.ItemDataRole.UserRole
@@ -68,6 +68,20 @@ class DiscoverView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self._add_selected())
 
+        # Clicking a column header orders the results (again to flip the direction).
+        self._rows: list[dict] = []
+        self._sort = ColumnSort(
+            self.table,
+            {
+                0: lambda row: (row.get("title") or "").casefold(),
+                1: lambda row: ", ".join(row.get("authors") or []).casefold(),
+                2: lambda row: (row.get("published_year") is None, row.get("published_year") or 0),
+                3: lambda row: (row.get("publisher") or "").casefold(),
+                4: lambda row: (row.get("source") or "").casefold(),
+            },
+            self._render_rows,
+        )
+
         add_btn = QPushButton("＋  " + _("Add selected to wishlist"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add_selected)
@@ -101,12 +115,14 @@ class DiscoverView(QWidget):
             return
         self.search_btn.setEnabled(False)
         self.message.setText(_("Searching for “%s”…") % query)
+        self._rows = []
         self.table.setRowCount(0)
         run_async(search_books, self._on_results, self._on_error, query)
 
     def _on_results(self, results: list[dict]) -> None:
         self.search_btn.setEnabled(True)
         if not results:
+            self._rows = []
             self.message.setText(_("No matches found."))
             return
         count = len(results)
@@ -114,8 +130,13 @@ class DiscoverView(QWidget):
             i18n.ngettext("%d match found. Double-click to add one.",
                           "%d matches found. Double-click to add one.", count) % count
         )
-        self.table.setRowCount(count)
-        for row_index, result in enumerate(results):
+        self._rows = results
+        self._render_rows()
+
+    def _render_rows(self) -> None:
+        rows = self._sort.apply(self._rows)
+        self.table.setRowCount(len(rows))
+        for row_index, result in enumerate(rows):
             values = [
                 result.get("title") or _("(untitled)"),
                 ", ".join(result.get("authors") or []),

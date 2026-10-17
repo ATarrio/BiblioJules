@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -27,6 +29,7 @@ def _opt_int(value):
 
 def parse_filters(request: Request) -> dict:
     qp = request.query_params
+    direction = (qp.get("dir") or "").lower()
     return {
         "search": (qp.get("search") or "").strip() or None,
         "status_id": _opt_int(qp.get("status")),
@@ -35,14 +38,80 @@ def parse_filters(request: Request) -> dict:
         "publisher_id": _opt_int(qp.get("publisher")),
         "loaned": qp.get("loaned") or None,
         "sort": qp.get("sort") or "recent",
+        "dir": direction if direction in ("asc", "desc") else None,
     }
 
 
+# Columns the catalog can be ordered by, with the direction used on first
+# click (Year naturally reads newest-first).
+_SORT_FIELDS = [
+    ("title", "Title", False),
+    ("author", "Author", False),
+    ("year", "Year", True),
+]
+
+# filter dict key -> query-string name used by the catalog form.
+_SORT_FILTER_PARAMS = [
+    ("search", "search"),
+    ("status", "status_id"),
+    ("location", "location_id"),
+    ("author", "author_id"),
+    ("publisher", "publisher_id"),
+    ("loaned", "loaned"),
+]
+
+
+def _sort_links(filters: dict) -> list[dict]:
+    """Clickable header links that toggle each column's sort direction."""
+    base = {
+        param: filters[key]
+        for param, key in _SORT_FILTER_PARAMS
+        if filters.get(key) not in (None, "")
+    }
+
+    def url(params: dict) -> str:
+        return "/books?" + urlencode(params) if params else "/books"
+
+    links = [
+        {
+            "key": "recent",
+            "label": _("Recently added"),
+            "url": url(base),
+            "active": filters.get("sort") in (None, "", "recent"),
+            "arrow": "",
+        }
+    ]
+    for key, label, default_desc in _SORT_FIELDS:
+        active = filters.get("sort") == key
+        current = filters.get("dir") or ("desc" if default_desc else "asc")
+        if active:
+            next_dir = "asc" if current == "desc" else "desc"
+            arrow = "▼" if current == "desc" else "▲"
+        else:
+            next_dir = "desc" if default_desc else "asc"
+            arrow = ""
+        links.append(
+            {
+                "key": key,
+                "label": _(label),
+                "url": url({**base, "sort": key, "dir": next_dir}),
+                "active": active,
+                "arrow": arrow,
+            }
+        )
+    return links
+
+
 def catalog_context(db: Session, filters: dict) -> dict:
-    books = library.query_books(db, **filters)
+    query = dict(filters)
+    direction = query.pop("dir", None)
+    if direction is not None:
+        query["descending"] = direction == "desc"
+    books = library.query_books(db, **query)
     return {
         "books": books,
         "filters": filters,
+        "sort_links": _sort_links(filters),
         "statuses": library.list_statuses(db),
         "locations": library.flatten_locations(db),
         "authors": library.list_authors(db),

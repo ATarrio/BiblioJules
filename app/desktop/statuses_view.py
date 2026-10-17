@@ -23,7 +23,7 @@ from ..i18n import _
 from ..services import library
 from .db import session_scope
 from .dialogs import StatusDialog
-from .util import page_header
+from .util import ColumnSort, page_header
 
 _STATUS_ID = Qt.ItemDataRole.UserRole
 
@@ -50,6 +50,20 @@ class StatusesView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self._edit())
+
+        # Clicking a column header orders the rows (again to flip the direction).
+        self._rows: list[dict] = []
+        self._sort = ColumnSort(
+            self.table,
+            {
+                0: lambda row: row["name"].casefold(),
+                1: lambda row: row["name"].casefold(),
+                2: lambda row: row["icon"].casefold(),
+                3: lambda row: row["kind"].casefold(),
+                4: lambda row: row["description"].casefold(),
+            },
+            self._render_rows,
+        )
 
         add_btn = QPushButton("＋  " + _("Add"))
         add_btn.setProperty("variant", "primary")
@@ -83,28 +97,32 @@ class StatusesView(QWidget):
     def refresh(self) -> None:
         with session_scope() as db:
             statuses = library.list_statuses(db)
-            rows = [
-                (
-                    status.id,
-                    i18n.status_label(status),
-                    status.icon or "",
-                    _("built-in") if status.is_system else _("custom"),
-                    status.color or "#64748b",
-                    status.description or "",
-                )
+            self._rows = [
+                {
+                    "id": status.id,
+                    "name": i18n.status_label(status),
+                    "icon": status.icon or "",
+                    "kind": _("built-in") if status.is_system else _("custom"),
+                    "color": status.color or "#64748b",
+                    "description": status.description or "",
+                }
                 for status in statuses
             ]
+        self._render_rows()
 
+    def _render_rows(self) -> None:
+        rows = self._sort.apply(self._rows)
+        self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
-        for row_index, (status_id, name, icon, kind, color, description) in enumerate(rows):
+        for row_index, row in enumerate(rows):
             swatch = QTableWidgetItem("")
-            swatch.setData(_STATUS_ID, status_id)
+            swatch.setData(_STATUS_ID, row["id"])
             self.table.setItem(row_index, 0, swatch)
-            self.table.setCellWidget(row_index, 0, self._swatch(color))
-            self.table.setItem(row_index, 1, QTableWidgetItem(name))
-            self.table.setItem(row_index, 2, QTableWidgetItem(icon))
-            self.table.setItem(row_index, 3, QTableWidgetItem(kind))
-            self.table.setItem(row_index, 4, QTableWidgetItem(description))
+            self.table.setCellWidget(row_index, 0, self._swatch(row["color"]))
+            self.table.setItem(row_index, 1, QTableWidgetItem(row["name"]))
+            self.table.setItem(row_index, 2, QTableWidgetItem(row["icon"]))
+            self.table.setItem(row_index, 3, QTableWidgetItem(row["kind"]))
+            self.table.setItem(row_index, 4, QTableWidgetItem(row["description"]))
 
     @staticmethod
     def _swatch(color: str) -> QWidget:

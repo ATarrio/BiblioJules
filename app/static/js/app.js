@@ -53,18 +53,34 @@ document.addEventListener('alpine:init', () => {
   });
 });
 
-// Open the modal whenever new content is swapped into #modal-body.
+// Open the modal whenever new content is swapped into #modal-body, and keep the
+// catalog's hidden sort fields in sync when the results grid is swapped.
 document.addEventListener('htmx:afterSwap', (event) => {
   const target = event.detail && event.detail.target;
-  if (target && target.id === 'modal-body') {
+  if (!target) return;
+  if (target.id === 'modal-body') {
     // A fragment can request its own title with data-modal-title="…".
     const titled = target.querySelector('[data-modal-title]');
     if (titled && window.Alpine) {
       Alpine.store('ui').modalTitle = titled.getAttribute('data-modal-title');
     }
     window.Alpine && Alpine.store('ui').open();
+  } else if (target.id === 'book-grid') {
+    syncCatalogSort();
   }
 });
+
+// Header-click sorting is reflected in the URL; mirror it into the filter form's
+// hidden fields so changing a filter afterwards keeps the chosen order.
+function syncCatalogSort() {
+  const form = document.getElementById('filters');
+  if (!form) return;
+  const params = new URLSearchParams(window.location.search);
+  const sort = form.querySelector('input[name=sort]');
+  const dir = form.querySelector('input[name=dir]');
+  if (sort) sort.value = params.get('sort') || 'recent';
+  if (dir) dir.value = params.get('dir') || '';
+}
 
 // A bulk add fired a bookAdded event (HX-Trigger) — the page behind the modal
 // is now out of date, so remember to refresh it on close.
