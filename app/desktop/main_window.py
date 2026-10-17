@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
 
         # --- views ------------------------------------------------------- #
         self.stack = QStackedWidget()
-        self.dashboard = DashboardView()
+        self.dashboard = DashboardView(self.notify_change)
         self.catalog = CatalogView(self.notify_change)
         self.discover = DiscoverView(self.notify_change)
         self.locations = LocationsView(self.notify_change)

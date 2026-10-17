@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -27,8 +30,16 @@ from PySide6.QtWidgets import (
 
 from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
+from .cover import CoverImage
 from .db import session_scope
-from .util import display_status, fill_combo, format_date, location_choices, status_choices
+from .util import (
+    display_status,
+    fill_combo,
+    format_date,
+    location_choices,
+    status_choices,
+    style_badge,
+)
 from .workers import run_async
 
 UNSET_SPIN = "—"  # shown for value 0 in the optional number fields
@@ -256,52 +267,128 @@ class BookDialog(QDialog):
 # Book details
 # --------------------------------------------------------------------------- #
 class BookDetailsDialog(QDialog):
-    """Read-only overview of a book plus its loan history."""
+    """Read-only overview of a book: cover, metadata, loans and an Edit action."""
 
-    def __init__(self, parent: QWidget | None = None, *, book_id: int) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        book_id: int,
+        on_change: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.book_id = book_id
+        self.on_change = on_change
         self.setWindowTitle("Book details")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(640)
         self._build_ui()
         self._load()
 
     def _build_ui(self) -> None:
-        self.form = QFormLayout()
+        # --- header: cover on the left, title block on the right ---------- #
+        self.cover = CoverImage(170)
+
+        self.status_badge = QLabel()
+        self.status_badge.setVisible(False)
+
+        self.title_label = QLabel("")
+        self.title_label.setObjectName("DetailTitle")
+        self.title_label.setWordWrap(True)
+
+        self.subtitle_label = QLabel("")
+        self.subtitle_label.setObjectName("Muted")
+        self.subtitle_label.setWordWrap(True)
+
+        self.authors_label = QLabel("")
+        self.authors_label.setObjectName("DetailAuthors")
+        self.authors_label.setWordWrap(True)
+
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(0, 0, 0, 0)
+        badge_row.addWidget(self.status_badge, 0, Qt.AlignmentFlag.AlignLeft)
+        badge_row.addStretch(1)
+
+        header_col = QVBoxLayout()
+        header_col.setSpacing(6)
+        header_col.addLayout(badge_row)
+        header_col.addWidget(self.title_label)
+        header_col.addWidget(self.subtitle_label)
+        header_col.addWidget(self.authors_label)
+
+        top = QHBoxLayout()
+        top.setSpacing(18)
+        top.addWidget(self.cover, 0, Qt.AlignmentFlag.AlignTop)
+        top.addLayout(header_col, 1)
+
+        # --- metadata ----------------------------------------------------- #
         self.fields: dict[str, QLabel] = {}
+        meta = QFormLayout()
+        meta.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for key, label in (
-            ("title", "Title"),
-            ("authors", "Authors"),
             ("publisher", "Publisher"),
             ("published", "Published"),
             ("isbn", "ISBN"),
             ("location", "Location"),
-            ("status", "Status"),
             ("loan", "Current loan"),
-            ("description", "Description"),
-            ("notes", "Notes"),
         ):
             value = QLabel("")
             value.setWordWrap(True)
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.fields[key] = value
-            self.form.addRow(label, value)
+            meta.addRow(label, value)
 
+        # --- description & notes ------------------------------------------ #
+        self.description_label = QLabel("Description")
+        self.description_label.setObjectName("SectionTitle")
+        self.description = QLabel("")
+        self.description.setWordWrap(True)
+        self.description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        self.notes_label = QLabel("Notes")
+        self.notes_label.setObjectName("SectionTitle")
+        self.notes = QLabel("")
+        self.notes.setWordWrap(True)
+        self.notes.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        # --- loan history -------------------------------------------------- #
+        self.loans_label = QLabel("Loan history")
+        self.loans_label.setObjectName("SectionTitle")
         self.loans = QTableWidget(0, 4)
         self.loans.setHorizontalHeaderLabels(["Borrower", "Lent", "Due", "Returned"])
         self.loans.verticalHeader().setVisible(False)
-        self.loans.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.loans.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.loans.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.loans.setAlternatingRowColors(True)
+        self.loans.setShowGrid(False)
         self.loans.horizontalHeader().setStretchLastSection(True)
+        self.loans.setMinimumHeight(140)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
+        # --- buttons ------------------------------------------------------- #
+        edit_btn = QPushButton("Edit details")
+        edit_btn.setProperty("variant", "primary")
+        edit_btn.clicked.connect(self._edit)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(close_btn)
+        buttons.addWidget(edit_btn)
+
+        header_col.setSpacing(10)
+        header_col.addLayout(meta)
+        header_col.addWidget(self.description_label)
+        header_col.addWidget(self.description)
+        header_col.addWidget(self.notes_label)
+        header_col.addWidget(self.notes)
+        header_col.addWidget(self.loans_label)
+        header_col.addWidget(self.loans)
+        header_col.addStretch(1)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(self.form)
-        layout.addWidget(QLabel("Loan history"))
-        layout.addWidget(self.loans)
-        layout.addWidget(buttons)
+        layout.setSpacing(14)
+        layout.addLayout(top, 1)
+        layout.addLayout(buttons)
 
     def _load(self) -> None:
         with session_scope() as db:
@@ -310,16 +397,37 @@ class BookDetailsDialog(QDialog):
                 QMessageBox.warning(self, "Not found", "This book no longer exists.")
                 self.reject()
                 return
-            self.fields["title"].setText(book.title or "")
-            self.fields["authors"].setText(book.author_display)
-            self.fields["publisher"].setText(book.publisher.name if book.publisher else "")
-            published = " ".join(p for p in (book.published_date, str(book.published_year or "")) if p)
+
+            self.cover.load(book.cover_url, book.title or "")
+            self.title_label.setText(book.title or "Untitled")
+            self.subtitle_label.setText(book.subtitle or "")
+            self.subtitle_label.setVisible(bool(book.subtitle))
+            self.authors_label.setText(book.author_display or "")
+
+            if book.status is not None:
+                style_badge(
+                    self.status_badge,
+                    display_status(book.status),
+                    book.status.color or "#64748b",
+                )
+                self.status_badge.setVisible(True)
+            else:
+                self.status_badge.setVisible(False)
+
+            self.fields["publisher"].setText(book.publisher.name if book.publisher else "—")
+            published = " ".join(
+                p for p in (book.published_date, str(book.published_year or "")) if p
+            )
             if book.page_count:
-                published = f"{published} · {book.page_count} pp." if published else f"{book.page_count} pp."
-            self.fields["published"].setText(published)
-            self.fields["isbn"].setText(book.isbn or "")
-            self.fields["location"].setText(book.location.full_path if book.location else "")
-            self.fields["status"].setText(display_status(book.status))
+                published = (
+                    f"{published} · {book.page_count} pp."
+                    if published
+                    else f"{book.page_count} pp."
+                )
+            self.fields["published"].setText(published or "—")
+            self.fields["isbn"].setText(book.isbn or "—")
+            self.fields["location"].setText(book.location.full_path if book.location else "—")
+
             loan = book.active_loan
             if loan:
                 due = f" due {format_date(loan.due_at)}" if loan.due_at else ""
@@ -329,8 +437,14 @@ class BookDetailsDialog(QDialog):
                 )
             else:
                 self.fields["loan"].setText("Not on loan")
-            self.fields["description"].setText(book.description or "")
-            self.fields["notes"].setText(book.notes or "")
+
+            self.description.setText(book.description or "")
+            self.description.setVisible(bool(book.description))
+            self.description_label.setVisible(bool(book.description))
+            self.notes.setText(book.notes or "")
+            self.notes.setVisible(bool(book.notes))
+            self.notes_label.setVisible(bool(book.notes))
+
             self.loans.setRowCount(len(book.loans))
             for row, loan in enumerate(book.loans):
                 for col, text in enumerate(
@@ -343,6 +457,25 @@ class BookDetailsDialog(QDialog):
                 ):
                     self.loans.setItem(row, col, QTableWidgetItem(text))
             self.loans.resizeColumnsToContents()
+            self.loans_label.setVisible(bool(book.loans))
+            self.loans.setVisible(bool(book.loans))
+
+    def _edit(self) -> None:
+        dialog = BookDialog(self, book_id=self.book_id)
+        if dialog.exec() != BookDialog.DialogCode.Accepted:
+            return
+        try:
+            with session_scope() as db:
+                book = library.get_book(db, self.book_id)
+                if book is None:
+                    raise ValueError("This book no longer exists.")
+                library.update_book(db, book, dialog.data())
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Could not save", str(exc))
+            return
+        self._load()
+        if self.on_change is not None:
+            self.on_change()
 
 
 # --------------------------------------------------------------------------- #

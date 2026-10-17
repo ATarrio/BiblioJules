@@ -143,6 +143,15 @@ QLabel#StatIcon {{ font-size: 20px; background: transparent; }}
 QLabel#Muted {{ color: {SLATE_400}; background: transparent; }}
 QLabel#Dim {{ color: {SLATE_500}; background: transparent; }}
 QLabel#Hint {{ color: {AMBER}; background: transparent; }}
+QLabel#DetailTitle {{ font-size: 20px; font-weight: bold; color: {WHITE}; background: transparent; }}
+QLabel#DetailAuthors {{ color: {BRAND_300}; font-weight: bold; background: transparent; }}
+QLabel#CoverImage {{
+    background-color: {SLATE_900};
+    border: 1px solid {SLATE_800};
+    border-radius: 12px;
+    color: {SLATE_500};
+    font-size: 34px;
+}}
 
 /* ---------- buttons ---------- */
 QPushButton {{

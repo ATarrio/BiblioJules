@@ -86,7 +86,8 @@
         {% for loan in active_loans %}
           <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
             <td class="px-4 py-2 font-medium text-slate-800 dark:text-slate-200">
-              <a href="/books/{{ loan.book_id }}" class="hover:text-brand-600">{{ loan.book.title }}</a>
+              <a href="/books/{{ loan.book_id }}" hx-get="/books/{{ loan.book_id }}/details"
+                 hx-target="#modal-body" hx-swap="innerHTML" class="hover:text-brand-600">{{ loan.book.title }}</a>
             </td>
             <td class="px-4 py-2 text-slate-600 dark:text-slate-400">{{ loan.borrower_name }}</td>
             <td class="px-4 py-2 text-slate-500">{{ loan.lent_at|date }}</td>

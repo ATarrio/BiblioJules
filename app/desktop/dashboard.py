@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from typing import Callable
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -15,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from .db import session_scope
+from .dialogs import BookDetailsDialog
 from .theme import AMBER, BRAND_500, EMERALD, VIOLET
 from .util import badge, card, page_header, section_title
 from ..services import library
@@ -58,9 +62,27 @@ def _stat_card(icon: str, label: str, color: str) -> tuple[QFrame, QLabel]:
     return frame, value
 
 
-class DashboardView(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+class BookCard(QFrame):
+    """A dashboard book tile; double-clicking it opens the details dialog."""
+
+    activated = Signal(int)
+
+    def __init__(self, book_id: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.book_id = book_id
+        self.setObjectName("BookCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Double-click for details")
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt naming)
+        self.activated.emit(self.book_id)
+        super().mouseDoubleClickEvent(event)
+
+
+class DashboardView(QWidget):
+    def __init__(self, on_change: Callable[[], None], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.on_change = on_change
         self._values: dict[str, QLabel] = {}
 
         outer = QVBoxLayout(self)
@@ -131,6 +153,9 @@ class DashboardView(QWidget):
         self._fill_statuses(counts)
         self._fill_recent(recent)
 
+    def _open_details(self, book_id: int) -> None:
+        BookDetailsDialog(self, book_id=book_id, on_change=self.on_change).exec()
+
     def _fill_statuses(self, counts) -> None:
         _clear(self._status_grid)
         if not counts:
@@ -174,8 +199,8 @@ class DashboardView(QWidget):
             self._recent_grid.addWidget(self._book_card(row), index // _COLUMNS, index % _COLUMNS)
 
     def _book_card(self, row: dict) -> QFrame:
-        frame = QFrame()
-        frame.setObjectName("BookCard")
+        frame = BookCard(row["id"])
+        frame.activated.connect(self._open_details)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(4)
@@ -211,4 +236,7 @@ class DashboardView(QWidget):
             meta.setObjectName("Dim")
             meta.setWordWrap(True)
             layout.addWidget(meta)
+        # Let clicks fall through to the card itself, wherever they land.
+        for label in frame.findChildren(QLabel):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         return frame

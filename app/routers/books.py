@@ -155,6 +155,18 @@ async def create_book(request: Request, db: Session = Depends(get_db)):
 
 
 # --------------------------------------------------------------------------- #
+# Read-only details (rendered into the modal)
+# --------------------------------------------------------------------------- #
+@router.get("/books/{book_id}/details", response_class=HTMLResponse)
+def book_details(book_id: int, request: Request, db: Session = Depends(get_db)):
+    """A compact card for the modal shown when a book is clicked."""
+    book = library.get_book(db, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return templates.TemplateResponse(request, "books/_details.html", {"book": book})
+
+
+# --------------------------------------------------------------------------- #
 # Editing / deleting
 # --------------------------------------------------------------------------- #
 @router.get("/books/{book_id}/edit", response_class=HTMLResponse)

@@ -104,11 +104,17 @@ def card() -> QFrame:
     return frame
 
 
-def badge(text: str, color: str) -> QLabel:
-    """A pill like the web app's status badges: tinted background, coloured text."""
-    label = QLabel(text)
+def style_badge(label: QLabel, text: str, color: str) -> None:
+    """Style an existing label as a pill: tinted background, coloured text."""
+    label.setText(text)
     label.setStyleSheet(
         f"background-color: {rgba(color, 0.18)}; color: {color};"
         f"border-radius: 9px; padding: 2px 9px; font-weight: bold;"
     )
+
+
+def badge(text: str, color: str) -> QLabel:
+    """A pill like the web app's status badges: tinted background, coloured text."""
+    label = QLabel()
+    style_badge(label, text, color)
     return label

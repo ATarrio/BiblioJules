@@ -2,7 +2,7 @@
 {% set action = ('/books/' ~ form.get('id')) if is_edit else '/books' %}
 {% set current_status = form.get('status_id') or (default_status.id if default_status else none) %}
 
-<div class="space-y-4">
+<div class="space-y-4" data-modal-title="{{ 'Edit book' if is_edit else 'Add a book' }}">
   {% if error %}
     <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
       {{ error }}

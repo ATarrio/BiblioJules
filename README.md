@@ -34,6 +34,9 @@ SQLite by default, but the database layer is fully abstracted so switching to
 - **Filter & search.** Filter by status, location (including everything nested
   underneath), author, publisher, and loan state; search across title, author,
   publisher and ISBN.
+- **Peek at a book.** Click a book tile (or double-click a row in the desktop
+  app) for a pop-up with its full details — cover included — plus a one-click
+  shortcut to edit them.
 - **Sleek & responsive** UI with dark mode, works on phone, tablet and desktop.
 - **JSON API** (`/api/...`) and interactive API docs at `/docs`, so a future
   mobile app or SPA can reuse the same backend.

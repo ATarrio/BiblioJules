@@ -44,6 +44,11 @@ document.addEventListener('alpine:init', () => {
 document.addEventListener('htmx:afterSwap', (event) => {
   const target = event.detail && event.detail.target;
   if (target && target.id === 'modal-body') {
+    // A fragment can request its own title with data-modal-title="…".
+    const titled = target.querySelector('[data-modal-title]');
+    if (titled && window.Alpine) {
+      Alpine.store('ui').modalTitle = titled.getAttribute('data-modal-title');
+    }
     window.Alpine && Alpine.store('ui').open();
   }
 });

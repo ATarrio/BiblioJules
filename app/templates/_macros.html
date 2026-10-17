@@ -48,6 +48,7 @@
 
 {% macro book_card(book) %}
   <a href="/books/{{ book.id }}"
+     hx-get="/books/{{ book.id }}/details" hx-target="#modal-body" hx-swap="innerHTML"
      class="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
     <div class="relative aspect-[2/3] w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
       {{ cover(book, 'transition duration-300 group-hover:scale-[1.03]') }}

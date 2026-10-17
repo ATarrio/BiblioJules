@@ -231,7 +231,7 @@ class CatalogView(QWidget):
         book_id = self._require_selection()
         if book_id is None:
             return
-        BookDetailsDialog(self, book_id=book_id).exec()
+        BookDetailsDialog(self, book_id=book_id, on_change=self.on_change).exec()
 
     def _lend(self) -> None:
         book_id = self._require_selection()
