@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Not found · {{ app_name }}{% endblock %}
+{% block title %}{{ _('Not found') }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div class="flex flex-col items-center justify-center py-24 text-center">
   <span class="text-6xl">🔍</span>
-  <h1 class="mt-4 text-2xl font-bold text-slate-900 dark:text-white">Not found</h1>
+  <h1 class="mt-4 text-2xl font-bold text-slate-900 dark:text-white">{{ _('Not found') }}</h1>
   <p class="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">{{ message }}</p>
-  <a href="/books" class="mt-6 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">Back to catalog</a>
+  <a href="/books" class="mt-6 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">{{ _('Back to catalog') }}</a>
 </div>
 {% endblock %}

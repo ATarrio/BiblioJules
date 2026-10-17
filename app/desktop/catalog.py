@@ -21,12 +21,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
+from ..i18n import _
 from ..services import library
 from ..services.serializers import book_to_dict
 from .db import session_scope
 from .util import card, fill_combo, location_choices, page_header, status_choices
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog
 
+# (value, English source label); translated when the combo is built.
 _SORTS = [("recent", "Newest first"), ("title", "Title"), ("author", "Author"), ("year", "Year")]
 _LOANED = [(None, "Any"), ("loaned", "On loan"), ("available", "Available")]
 
@@ -40,7 +43,7 @@ class CatalogView(QWidget):
     # -- construction ------------------------------------------------------- #
     def _build_ui(self) -> None:
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search title, author, publisher, ISBN…")
+        self.search.setPlaceholderText(_("Search title, author, publisher, ISBN…"))
         self.search.returnPressed.connect(self.reload_books)
 
         self.status = QComboBox()
@@ -48,13 +51,13 @@ class CatalogView(QWidget):
 
         self.loaned = QComboBox()
         for value, label in _LOANED:
-            self.loaned.addItem(label, value)
+            self.loaned.addItem(_(label), value)
 
         self.sort = QComboBox()
         for value, label in _SORTS:
-            self.sort.addItem(label, value)
+            self.sort.addItem(_(label), value)
 
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton(_("Refresh"))
         refresh_btn.setProperty("variant", "ghost")
         refresh_btn.clicked.connect(self.refresh)
 
@@ -71,7 +74,7 @@ class CatalogView(QWidget):
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Title", "Author(s)", "Status", "Location", "Year", "Loan"]
+            [_("Title"), _("Author(s)"), _("Status"), _("Location"), _("Year"), _("Loan")]
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -89,18 +92,18 @@ class CatalogView(QWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemDoubleClicked.connect(lambda *_: self._details())
 
-        add_btn = QPushButton("＋  Add book")
+        add_btn = QPushButton("＋  " + _("Add book"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add)
-        edit_btn = QPushButton("Edit")
+        edit_btn = QPushButton(_("Edit"))
         edit_btn.clicked.connect(self._edit)
-        details_btn = QPushButton("Details")
+        details_btn = QPushButton(_("Details"))
         details_btn.clicked.connect(self._details)
-        lend_btn = QPushButton("Lend")
+        lend_btn = QPushButton(_("Lend"))
         lend_btn.clicked.connect(self._lend)
-        return_btn = QPushButton("Return")
+        return_btn = QPushButton(_("Return"))
         return_btn.clicked.connect(self._return)
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton(_("Delete"))
         delete_btn.setProperty("variant", "danger")
         delete_btn.clicked.connect(self._delete)
 
@@ -120,7 +123,7 @@ class CatalogView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
-        layout.addWidget(page_header("Catalog", "Scan a book or search your shelves."))
+        layout.addWidget(page_header(_("Catalog"), _("Scan a book or search your shelves.")))
         layout.addWidget(filter_card)
         layout.addWidget(self.summary)
         layout.addWidget(self.table, 1)
@@ -137,8 +140,10 @@ class CatalogView(QWidget):
         with session_scope() as db:
             statuses = status_choices(db)
             locations = location_choices(db)
-        fill_combo(self.status, statuses, none_label="All statuses", current=current_status)
-        fill_combo(self.location, locations, none_label="All locations", current=current_location)
+        fill_combo(self.status, statuses, none_label=_("All statuses"), current=current_status)
+        fill_combo(
+            self.location, locations, none_label=_("All locations"), current=current_location
+        )
 
     def reload_books(self) -> None:
         with session_scope() as db:
@@ -155,21 +160,22 @@ class CatalogView(QWidget):
             ]
 
         self.table.setRowCount(len(rows))
-        self.summary.setText(f"{len(rows)} book{'s' if len(rows) != 1 else ''}")
+        count = len(rows)
+        self.summary.setText(i18n.ngettext("%d book", "%d books", count) % count)
         for row_index, row in enumerate(rows):
             status = row.get("status") or {}
             loan = row.get("active_loan")
             if loan:
-                loan_text = f"→ {loan['borrower_name']}"
+                loan_text = _("→ %s") % loan["borrower_name"]
                 if loan.get("is_overdue"):
-                    loan_text += "  (overdue)"
+                    loan_text += _("  (overdue)")
             else:
                 loan_text = ""
 
             values = [
                 row["title"],
-                ", ".join(row.get("authors") or []) or "Unknown author",
-                status.get("name") or "",
+                ", ".join(row.get("authors") or []) or _("Unknown author"),
+                i18n.status_label_from(status.get("slug"), status.get("name")),
                 (row.get("location") or {}).get("full_path") or "",
                 str(row.get("published_year") or ""),
                 loan_text,
@@ -193,7 +199,7 @@ class CatalogView(QWidget):
     def _require_selection(self) -> int | None:
         book_id = self._selected_id()
         if book_id is None:
-            QMessageBox.information(self, "No selection", "Select a book first.")
+            QMessageBox.information(self, _("No selection"), _("Select a book first."))
         return book_id
 
     # -- actions ------------------------------------------------------------ #
@@ -205,7 +211,7 @@ class CatalogView(QWidget):
             with session_scope() as db:
                 library.create_book(db, dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
@@ -230,10 +236,10 @@ class CatalogView(QWidget):
             with session_scope() as db:
                 book = library.get_book(db, book_id)
                 if book is None:
-                    raise ValueError("This book no longer exists.")
+                    raise ValueError(_("This book no longer exists."))
                 library.update_book(db, book, dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
@@ -250,11 +256,13 @@ class CatalogView(QWidget):
         with session_scope() as db:
             book = library.get_book(db, book_id)
             if book is None:
-                QMessageBox.warning(self, "Not found", "This book no longer exists.")
+                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
                 return
             title = book.title
             if book.active_loan is not None:
-                QMessageBox.information(self, "Already on loan", "This book is already lent out.")
+                QMessageBox.information(
+                    self, _("Already on loan"), _("This book is already lent out.")
+                )
                 return
 
         dialog = LendDialog(self, book_title=title)
@@ -266,7 +274,7 @@ class CatalogView(QWidget):
                 book = library.get_book(db, book_id)
                 library.lend_book(db, book, **payload)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not lend", str(exc))
+            QMessageBox.critical(self, _("Could not lend"), str(exc))
             return
         self.on_change()
 
@@ -277,12 +285,14 @@ class CatalogView(QWidget):
         with session_scope() as db:
             book = library.get_book(db, book_id)
             if book is None or book.active_loan is None:
-                QMessageBox.information(self, "Not on loan", "This book is not currently lent out.")
+                QMessageBox.information(
+                    self, _("Not on loan"), _("This book is not currently lent out.")
+                )
                 return
             borrower = book.active_loan.borrower_name
         if (
             QMessageBox.question(
-                self, "Return book", f"Mark the book as returned by {borrower}?"
+                self, _("Return book"), _("Mark the book as returned by %s?") % borrower
             )
             != QMessageBox.StandardButton.Yes
         ):
@@ -292,7 +302,7 @@ class CatalogView(QWidget):
                 book = library.get_book(db, book_id)
                 library.return_loan(db, book)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not return", str(exc))
+            QMessageBox.critical(self, _("Could not return"), str(exc))
             return
         self.on_change()
 
@@ -302,10 +312,12 @@ class CatalogView(QWidget):
             return
         with session_scope() as db:
             book = library.get_book(db, book_id)
-            title = book.title if book else "this book"
+            title = book.title if book else _("this book")
         if (
             QMessageBox.question(
-                self, "Delete book", f"Permanently delete “{title}” and its loan history?"
+                self,
+                _("Delete book"),
+                _("Permanently delete “%s” and its loan history?") % title,
             )
             != QMessageBox.StandardButton.Yes
         ):
@@ -316,6 +328,6 @@ class CatalogView(QWidget):
                 if book is not None:
                     library.delete_book(db, book)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not delete", str(exc))
+            QMessageBox.critical(self, _("Could not delete"), str(exc))
             return
         self.on_change()

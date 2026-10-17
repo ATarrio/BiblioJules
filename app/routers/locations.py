@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..i18n import _
 from ..models import Location
 from ..services import library
 
@@ -43,7 +44,7 @@ async def create_location(request: Request, db: Session = Depends(get_db)):
 async def update_location(location_id: int, request: Request, db: Session = Depends(get_db)):
     location = db.get(Location, location_id)
     if location is None:
-        raise HTTPException(status_code=404, detail="Location not found")
+        raise HTTPException(status_code=404, detail=_("Location not found"))
     form = await _form_dict(request)
     try:
         library.update_location(
@@ -63,6 +64,6 @@ async def update_location(location_id: int, request: Request, db: Session = Depe
 def delete_location(location_id: int, request: Request, db: Session = Depends(get_db)):
     location = db.get(Location, location_id)
     if location is None:
-        raise HTTPException(status_code=404, detail="Location not found")
+        raise HTTPException(status_code=404, detail=_("Location not found"))
     library.delete_location(db, location)
     return _redirect(request, "/locations")

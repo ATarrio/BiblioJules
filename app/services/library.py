@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..models import Author, Book, Loan, Location, Publisher, Status
+from ..i18n import _
 from .isbn_lookup import is_valid_isbn, normalize_isbn
 
 # --------------------------------------------------------------------------- #
@@ -297,7 +298,7 @@ def create_status(db: Session, *, name: str, color: str, icon=None, description=
 
 def delete_status(db: Session, status: Status) -> None:
     if status.is_system:
-        raise ValueError("System statuses cannot be deleted.")
+        raise ValueError(_("System statuses cannot be deleted."))
     fallback = get_status_by_slug(db, "available")
     for book in status.books:
         book.status_id = fallback.id if fallback else None
@@ -368,7 +369,7 @@ def update_location(db: Session, location: Location, *, name=None, parent_id=...
         new_parent = _to_id(parent_id)
         # Never allow a location to become its own ancestor.
         if new_parent is not None and new_parent in location.descendant_ids():
-            raise ValueError("A location cannot be moved inside itself.")
+            raise ValueError(_("A location cannot be moved inside itself."))
         location.parent_id = new_parent
     if kind is not None:
         location.kind = kind.strip() or None

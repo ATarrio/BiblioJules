@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..i18n import _
 from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from ..templating import templates
@@ -117,7 +118,7 @@ async def scan(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(
             request,
             "books/_form.html",
-            form_context(db, {"isbn": "", **sticky}, error="Please scan or type an ISBN."),
+            form_context(db, {"isbn": "", **sticky}, error=_("Please scan or type an ISBN.")),
         )
 
     existing = library.find_by_isbn(db, raw)
@@ -131,7 +132,7 @@ async def scan(request: Request, db: Session = Depends(get_db)):
                 db,
                 book_to_form(existing),
                 existing=existing,
-                info=f"This ISBN is already in your library: “{existing.title}”.",
+                info=_("This ISBN is already in your library: “%s”.") % existing.title,
             ),
         )
 
@@ -142,7 +143,7 @@ async def scan(request: Request, db: Session = Depends(get_db)):
             form_context(
                 db,
                 {"isbn": raw, **sticky},
-                warning=f"“{raw}” is not a valid ISBN. You can still fill it in by hand.",
+                warning=_("“%s” is not a valid ISBN. You can still fill it in by hand.") % raw,
             ),
         )
 
@@ -154,7 +155,7 @@ async def scan(request: Request, db: Session = Depends(get_db)):
             form_context(
                 db,
                 {"isbn": raw, "source": "manual", **sticky},
-                warning="No catalogue found that ISBN online. Enter the details by hand.",
+                warning=_("No catalogue found that ISBN online. Enter the details by hand."),
             ),
         )
 
@@ -187,7 +188,7 @@ async def create_book(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(
             request,
             "books/_form.html",
-            form_context(db, cleared, added=f"Added “{book.title}”."),
+            form_context(db, cleared, added=_("Added “%s”.") % book.title),
             headers={"HX-Trigger": "bookAdded"},
         )
 
@@ -202,7 +203,7 @@ def book_details(book_id: int, request: Request, db: Session = Depends(get_db)):
     """A compact card for the modal shown when a book is clicked."""
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     return templates.TemplateResponse(request, "books/_details.html", {"book": book})
 
 
@@ -213,7 +214,7 @@ def book_details(book_id: int, request: Request, db: Session = Depends(get_db)):
 def edit_form(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     return templates.TemplateResponse(
         request,
         "books/_form.html",
@@ -225,7 +226,7 @@ def edit_form(book_id: int, request: Request, db: Session = Depends(get_db)):
 async def update_book(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     data = await _form_dict(request)
     library.update_book(db, book, data)
     return _redirect(request, f"/books/{book.id}")
@@ -235,7 +236,7 @@ async def update_book(book_id: int, request: Request, db: Session = Depends(get_
 def delete_book(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     library.delete_book(db, book)
     return _redirect(request, "/books")
 
@@ -247,10 +248,10 @@ def delete_book(book_id: int, request: Request, db: Session = Depends(get_db)):
 async def lend(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     form = await _form_dict(request)
     if not (form.get("borrower_name") or "").strip():
-        raise HTTPException(status_code=400, detail="A borrower name is required")
+        raise HTTPException(status_code=400, detail=_("A borrower name is required"))
     library.lend_book(
         db,
         book,
@@ -268,7 +269,7 @@ async def lend(book_id: int, request: Request, db: Session = Depends(get_db)):
 async def return_book(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=_("Book not found"))
     form = await _form_dict(request)
     library.return_loan(
         db,

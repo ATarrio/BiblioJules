@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .database import Base, SessionLocal, engine
+from .i18n import LanguageMiddleware, _
 from .routers import api, books, health, locations, lookup, pages, statuses
 from .services.seed import seed_defaults
 from .templating import templates
@@ -56,6 +57,9 @@ def create_app() -> FastAPI:
         logging.info("INCOMING %s %s | %s", request.method, request.url.path, header_dump)
         return await call_next(request)
 
+    # Runs outermost so the per-request language is set before anything renders.
+    app.add_middleware(LanguageMiddleware)
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # JSON API first (its paths are unambiguous), then the HTML UI.
@@ -74,7 +78,7 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse(
                 request,
                 "404.html",
-                {"message": exc.detail or "Not found"},
+                {"message": exc.detail or _("Not found")},
                 status_code=404,
             )
         from fastapi.responses import JSONResponse

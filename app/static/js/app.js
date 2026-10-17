@@ -12,9 +12,10 @@ document.addEventListener('alpine:init', () => {
   });
 
   // Modal + transient error handling.
+  const i18n = window.BIBLIO_I18N || {};
   Alpine.store('ui', {
     modalOpen: false,
-    modalTitle: 'Add a book',
+    modalTitle: i18n.defaultModalTitle || 'Add a book',
     error: null,
     open(title) {
       if (title) this.modalTitle = title;
@@ -33,7 +34,10 @@ document.addEventListener('alpine:init', () => {
       this.modalOpen = false;
       document.body.classList.remove('overflow-hidden');
       const body = document.getElementById('modal-body');
-      if (body) body.innerHTML = '<p class="py-10 text-center text-sm text-slate-400">Loading…</p>';
+      if (body) {
+        const loading = (window.BIBLIO_I18N && window.BIBLIO_I18N.loading) || 'Loading…';
+        body.innerHTML = '<p class="py-10 text-center text-sm text-slate-400">' + loading + '</p>';
+      }
       // If books were added while the form stayed open, the page behind is
       // stale — reload once the modal is dismissed.
       if (window.__libraryDirty) {
@@ -71,7 +75,8 @@ document.addEventListener('bookAdded', () => {
 // Surface server errors as a small toast instead of a silent failure.
 document.addEventListener('htmx:responseError', (event) => {
   const xhr = event.detail.xhr;
-  let message = `Something went wrong (${xhr.status}).`;
+  const template = (window.BIBLIO_I18N && window.BIBLIO_I18N.error) || 'Something went wrong (%s).';
+  let message = template.replace('%s', xhr.status);
   try {
     const data = JSON.parse(xhr.responseText);
     if (data && data.detail) message = data.detail;

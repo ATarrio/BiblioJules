@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..i18n import _
 from ..models import Status
 from ..services import library
 
@@ -43,7 +44,7 @@ async def create_status(request: Request, db: Session = Depends(get_db)):
 async def update_status(status_id: int, request: Request, db: Session = Depends(get_db)):
     status = db.get(Status, status_id)
     if status is None:
-        raise HTTPException(status_code=404, detail="Status not found")
+        raise HTTPException(status_code=404, detail=_("Status not found"))
     form = await _form_dict(request)
     library.update_status(
         db,
@@ -60,7 +61,7 @@ async def update_status(status_id: int, request: Request, db: Session = Depends(
 def delete_status(status_id: int, request: Request, db: Session = Depends(get_db)):
     status = db.get(Status, status_id)
     if status is None:
-        raise HTTPException(status_code=404, detail="Status not found")
+        raise HTTPException(status_code=404, detail=_("Status not found"))
     try:
         library.delete_status(db, status)
     except ValueError as exc:

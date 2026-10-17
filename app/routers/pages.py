@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from .. import i18n
 from ..database import get_db
+from ..i18n import _
 from ..services import library
 from ..templating import templates
 
 router = APIRouter()
+
+# How long a language choice sticks (a year).
+_LANGUAGE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 
 
 def _opt_int(value):
@@ -44,6 +49,21 @@ def catalog_context(db: Session, filters: dict) -> dict:
         "publishers": library.list_publishers(db),
         "book_count": len(books),
     }
+
+
+@router.get("/language")
+def switch_language(request: Request):
+    """Remember the chosen language in a cookie and go back where we came from."""
+    code = i18n.normalize_language(request.query_params.get("lang"))
+    target = request.query_params.get("next") or request.headers.get("referer") or "/"
+    # Only ever redirect back into this site (no open redirects).
+    if not target.startswith("/") or target.startswith("//"):
+        target = "/"
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(
+        "lang", code, max_age=_LANGUAGE_COOKIE_MAX_AGE, samesite="lax", path="/"
+    )
+    return response
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -92,7 +112,7 @@ def book_detail(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
         return templates.TemplateResponse(
-            request, "404.html", {"message": "That book is not in the library."}, status_code=404
+            request, "404.html", {"message": _("That book is not in the library.")}, status_code=404
         )
     return templates.TemplateResponse(
         request,

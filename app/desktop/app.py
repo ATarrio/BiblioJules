@@ -6,6 +6,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from .. import i18n, preferences
 from ..config import settings
 from .db import initialize_database
 from .main_window import MainWindow
@@ -17,6 +18,9 @@ def run(argv: list[str] | None = None) -> int:
     app.setApplicationName(settings.app_name)
     app.setApplicationDisplayName(settings.app_name)
     app.setOrganizationName(settings.app_name)
+
+    # Apply the saved UI language before any widget text is built.
+    i18n.set_language(preferences.get_preferred_language())
 
     apply_theme(app)
 

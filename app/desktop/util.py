@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
 from ..services import library
 from ..models import Status
 from .theme import rgba
@@ -33,7 +34,8 @@ def status_choices(db) -> list[tuple[int, str]]:
     """``[(status_id, "icon name"), ...]`` ordered by the service."""
     choices: list[tuple[int, str]] = []
     for status in library.list_statuses(db):
-        label = f"{status.icon} {status.name}".strip() if status.icon else status.name
+        name = i18n.status_label(status)
+        label = f"{status.icon} {name}".strip() if status.icon else name
         choices.append((status.id, label))
     return choices
 
@@ -62,15 +64,14 @@ def fill_combo(
 def format_date(value: date | datetime | None) -> str:
     if value is None:
         return ""
-    if isinstance(value, datetime):
-        value = value.date()
-    return value.isoformat()
+    return i18n.format_date(value)
 
 
 def display_status(status: Status | None) -> str:
     if status is None:
         return ""
-    return f"{status.icon} {status.name}".strip() if status.icon else status.name
+    name = i18n.status_label(status)
+    return f"{status.icon} {name}".strip() if status.icon else name
 
 
 # --------------------------------------------------------------------------- #

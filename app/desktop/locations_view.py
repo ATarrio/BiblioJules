@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import _
 from ..services import library
 from .db import session_scope
 from .dialogs import LocationDialog
@@ -34,7 +35,7 @@ class LocationsView(QWidget):
     def _build_ui(self) -> None:
         self.tree = QTreeWidget()
         self.tree.setColumnCount(3)
-        self.tree.setHeaderLabels(["Location", "Kind", "Description"])
+        self.tree.setHeaderLabels([_("Location"), _("Kind"), _("Description")])
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tree.setAlternatingRowColors(True)
@@ -43,14 +44,14 @@ class LocationsView(QWidget):
         self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.tree.itemDoubleClicked.connect(lambda *_: self._edit())
 
-        add_btn = QPushButton("＋  Add")
+        add_btn = QPushButton("＋  " + _("Add"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add)
-        add_child_btn = QPushButton("Add child")
+        add_child_btn = QPushButton(_("Add child"))
         add_child_btn.clicked.connect(self._add_child)
-        edit_btn = QPushButton("Edit")
+        edit_btn = QPushButton(_("Edit"))
         edit_btn.clicked.connect(self._edit)
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton(_("Delete"))
         delete_btn.setProperty("variant", "danger")
         delete_btn.clicked.connect(self._delete)
 
@@ -67,8 +68,8 @@ class LocationsView(QWidget):
         layout.setSpacing(16)
         layout.addWidget(
             page_header(
-                "Locations",
-                "Rooms, shelves and boxes. Nest them however your home is arranged.",
+                _("Locations"),
+                _("Rooms, shelves and boxes. Nest them however your home is arranged."),
             )
         )
         layout.addWidget(self.tree, 1)
@@ -109,14 +110,16 @@ class LocationsView(QWidget):
             with session_scope() as db:
                 library.create_location(db, **dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
     def _add_child(self) -> None:
         parent_id = self._selected_id()
         if parent_id is None:
-            QMessageBox.information(self, "No selection", "Select a parent location first.")
+            QMessageBox.information(
+                self, _("No selection"), _("Select a parent location first.")
+            )
             return
         dialog = LocationDialog(self, preselect_parent=parent_id)
         if dialog.exec() != LocationDialog.DialogCode.Accepted:
@@ -125,14 +128,14 @@ class LocationsView(QWidget):
             with session_scope() as db:
                 library.create_location(db, **dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
     def _edit(self) -> None:
         location_id = self._selected_id()
         if location_id is None:
-            QMessageBox.information(self, "No selection", "Select a location first.")
+            QMessageBox.information(self, _("No selection"), _("Select a location first."))
             return
         dialog = LocationDialog(self, location_id=location_id)
         if dialog.exec() != LocationDialog.DialogCode.Accepted:
@@ -143,32 +146,32 @@ class LocationsView(QWidget):
 
                 location = db.get(Location, location_id)
                 if location is None:
-                    raise ValueError("This location no longer exists.")
+                    raise ValueError(_("This location no longer exists."))
                 library.update_location(db, location, **dialog.data())
         except ValueError as exc:
-            QMessageBox.warning(self, "Could not move", str(exc))
+            QMessageBox.warning(self, _("Could not move"), str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
     def _delete(self) -> None:
         location_id = self._selected_id()
         if location_id is None:
-            QMessageBox.information(self, "No selection", "Select a location first.")
+            QMessageBox.information(self, _("No selection"), _("Select a location first."))
             return
         with session_scope() as db:
             from ..models import Location
 
             location = db.get(Location, location_id)
-            name = location.name if location else "this location"
+            name = location.name if location else _("this location")
         if (
             QMessageBox.question(
                 self,
-                "Delete location",
-                f"Delete “{name}” and everything nested inside it? "
-                "Books are kept but lose this location.",
+                _("Delete location"),
+                _("Delete “%s” and everything nested inside it? "
+                  "Books are kept but lose this location.") % name,
             )
             != QMessageBox.StandardButton.Yes
         ):
@@ -181,6 +184,6 @@ class LocationsView(QWidget):
                 if location is not None:
                     library.delete_location(db, location)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not delete", str(exc))
+            QMessageBox.critical(self, _("Could not delete"), str(exc))
             return
         self.on_change()

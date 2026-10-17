@@ -21,6 +21,8 @@ from .db import session_scope
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, BRAND_500, EMERALD, VIOLET
 from .util import badge, card, page_header, section_title
+from .. import i18n
+from ..i18n import _
 from ..services import library
 from ..services.serializers import book_to_dict
 
@@ -72,7 +74,7 @@ class BookCard(QFrame):
         self.book_id = book_id
         self.setObjectName("BookCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Double-click for details")
+        self.setToolTip(_("Double-click for details"))
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt naming)
         self.activated.emit(self.book_id)
@@ -100,17 +102,17 @@ class DashboardView(QWidget):
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(20)
         layout.addWidget(
-            page_header("Your library", "Scan a book to add it, or browse your shelves below.")
+            page_header(_("Your library"), _("Scan a book to add it, or browse your shelves below."))
         )
 
         # --- stat cards --------------------------------------------------- #
         cards_row = QGridLayout()
         cards_row.setSpacing(16)
         specs = [
-            ("library", "In the library", "📚", BRAND_500),
-            ("loans", "Lent out", "🤝", AMBER),
-            ("wishlist", "Wishlist", "⭐", VIOLET),
-            ("authors", "Authors", "✍️", EMERALD),
+            ("library", _("In the library"), "📚", BRAND_500),
+            ("loans", _("Lent out"), "🤝", AMBER),
+            ("wishlist", _("Wishlist"), "⭐", VIOLET),
+            ("authors", _("Authors"), "✍️", EMERALD),
         ]
         for column, (key, label, icon, color) in enumerate(specs):
             frame, value = _stat_card(icon, label, color)
@@ -119,7 +121,7 @@ class DashboardView(QWidget):
         layout.addLayout(cards_row)
 
         # --- by status ---------------------------------------------------- #
-        layout.addWidget(section_title("By status"))
+        layout.addWidget(section_title(_("By status")))
         status_host = QWidget()
         self._status_grid = QGridLayout(status_host)
         self._status_grid.setContentsMargins(0, 0, 0, 0)
@@ -127,7 +129,7 @@ class DashboardView(QWidget):
         layout.addWidget(status_host)
 
         # --- recently added ----------------------------------------------- #
-        layout.addWidget(section_title("Recently added"))
+        layout.addWidget(section_title(_("Recently added")))
         recent_card = card()
         self._recent_grid = QGridLayout(recent_card)
         self._recent_grid.setContentsMargins(16, 16, 16, 16)
@@ -159,7 +161,7 @@ class DashboardView(QWidget):
     def _fill_statuses(self, counts) -> None:
         _clear(self._status_grid)
         if not counts:
-            self._status_grid.addWidget(QLabel("No statuses yet."), 0, 0)
+            self._status_grid.addWidget(QLabel(_("No statuses yet.")), 0, 0)
             return
         for index, (status, count) in enumerate(counts):
             chip = QFrame()
@@ -174,7 +176,8 @@ class DashboardView(QWidget):
             dot = QLabel()
             dot.setFixedSize(10, 10)
             dot.setStyleSheet(f"background-color: {status.color}; border-radius: 5px;")
-            name = QLabel(f"{status.icon} {status.name}".strip() if status.icon else status.name)
+            name_text = i18n.status_label(status)
+            name = QLabel(f"{status.icon} {name_text}".strip() if status.icon else name_text)
             name.setStyleSheet("color: #e2e8f0; border: none; background: transparent;")
             tally = QLabel(str(count))
             tally.setStyleSheet(
@@ -191,7 +194,7 @@ class DashboardView(QWidget):
     def _fill_recent(self, recent: list[dict]) -> None:
         _clear(self._recent_grid)
         if not recent:
-            empty = QLabel("📖  No books yet — add one from the Catalog tab.")
+            empty = QLabel(_("📖  No books yet — add one from the Catalog tab."))
             empty.setObjectName("Muted")
             self._recent_grid.addWidget(empty, 0, 0)
             return
@@ -206,16 +209,22 @@ class DashboardView(QWidget):
         layout.setSpacing(4)
 
         status = row.get("status")
-        title = QLabel(row.get("title") or "Untitled")
+        title = QLabel(row.get("title") or _("Untitled"))
         title.setStyleSheet("font-weight: bold; color: #f8fafc; background: transparent;")
         title.setWordWrap(True)
 
         top = QHBoxLayout()
         top.addWidget(title, 1)
         if status and status.get("name"):
-            top.addWidget(badge(status["name"], status.get("color") or "#64748b"), 0)
+            top.addWidget(
+                badge(
+                    i18n.status_label_from(status.get("slug"), status.get("name")),
+                    status.get("color") or "#64748b",
+                ),
+                0,
+            )
 
-        authors = QLabel(", ".join(row.get("authors") or []) or "Unknown author")
+        authors = QLabel(", ".join(row.get("authors") or []) or _("Unknown author"))
         authors.setObjectName("Muted")
         authors.setWordWrap(True)
 

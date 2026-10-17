@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import _
 from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from .cover import CoverImage
@@ -71,7 +72,7 @@ class BookDialog(QDialog):
         self.on_bulk_save = on_bulk_save
         self.keep_open: QCheckBox | None = None
         self._source: str | None = None
-        self.setWindowTitle("Add book" if book_id is None else "Edit book")
+        self.setWindowTitle(_("Add book") if book_id is None else _("Edit book"))
         self.setMinimumWidth(620)
         self._build_ui()
         self._load_choices()
@@ -86,8 +87,8 @@ class BookDialog(QDialog):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.isbn = QLineEdit()
-        self.isbn.setPlaceholderText("Scan or type an ISBN, then press Look up")
-        self.lookup_btn = QPushButton("Look up online")
+        self.isbn.setPlaceholderText(_("Scan or type an ISBN, then press Look up"))
+        self.lookup_btn = QPushButton(_("Look up online"))
         self.lookup_btn.clicked.connect(self._on_lookup_clicked)
         self.isbn.returnPressed.connect(self._on_lookup_clicked)
         isbn_row = QHBoxLayout()
@@ -95,15 +96,15 @@ class BookDialog(QDialog):
         isbn_row.addWidget(self.lookup_btn)
         isbn_widget = QWidget()
         isbn_widget.setLayout(isbn_row)
-        form.addRow("ISBN", isbn_widget)
+        form.addRow(_("ISBN"), isbn_widget)
 
         self.title = QLineEdit()
         self.subtitle = QLineEdit()
         self.authors = QLineEdit()
-        self.authors.setPlaceholderText("Comma-separated, e.g. Ursula K. Le Guin")
+        self.authors.setPlaceholderText(_("Comma-separated, e.g. Ursula K. Le Guin"))
         self.publisher = QLineEdit()
         self.published_date = QLineEdit()
-        self.published_date.setPlaceholderText("free text, e.g. 1968 or 2005-04-01")
+        self.published_date.setPlaceholderText(_("free text, e.g. 1968 or 2005-04-01"))
 
         self.year = QSpinBox()
         self.year.setRange(0, 3000)
@@ -124,19 +125,19 @@ class BookDialog(QDialog):
         self.notes = QPlainTextEdit()
         self.notes.setFixedHeight(60)
 
-        form.addRow("Title", self.title)
-        form.addRow("Subtitle", self.subtitle)
-        form.addRow("Authors", self.authors)
-        form.addRow("Publisher", self.publisher)
-        form.addRow("Published date", self.published_date)
-        form.addRow("Published year", self.year)
-        form.addRow("Page count", self.pages)
-        form.addRow("Language", self.language)
-        form.addRow("Cover URL", self.cover_url)
-        form.addRow("Location", self.location)
-        form.addRow("Status", self.status)
-        form.addRow("Description", self.description)
-        form.addRow("Notes", self.notes)
+        form.addRow(_("Title"), self.title)
+        form.addRow(_("Subtitle"), self.subtitle)
+        form.addRow(_("Authors"), self.authors)
+        form.addRow(_("Publisher"), self.publisher)
+        form.addRow(_("Published date"), self.published_date)
+        form.addRow(_("Published year"), self.year)
+        form.addRow(_("Page count"), self.pages)
+        form.addRow(_("Language"), self.language)
+        form.addRow(_("Cover URL"), self.cover_url)
+        form.addRow(_("Location"), self.location)
+        form.addRow(_("Status"), self.status)
+        form.addRow(_("Description"), self.description)
+        form.addRow(_("Notes"), self.notes)
 
         self.message = QLabel("")
         self.message.setObjectName("Hint")
@@ -154,9 +155,9 @@ class BookDialog(QDialog):
         layout.addWidget(self.message)
 
         if self.book_id is None:
-            self.keep_open = Switch("Keep open to add several books in a row")
+            self.keep_open = Switch(_("Keep open to add several books in a row"))
             self.keep_open.setToolTip(
-                "After each save the ISBN details are cleared; the shelf, status and notes stay put."
+                _("After each save the ISBN details are cleared; the shelf, status and notes stay put.")
             )
             layout.addWidget(self.keep_open)
 
@@ -167,8 +168,8 @@ class BookDialog(QDialog):
             locations = location_choices(db)
             statuses = status_choices(db)
             default = library.get_default_status(db)
-        fill_combo(self.location, locations, none_label="— none —")
-        fill_combo(self.status, statuses, none_label="— default —")
+        fill_combo(self.location, locations, none_label=_("— none —"))
+        fill_combo(self.status, statuses, none_label=_("— default —"))
         if self.book_id is None and default is not None:
             index = self.status.findData(default.id)
             if index >= 0:
@@ -179,7 +180,7 @@ class BookDialog(QDialog):
         with session_scope() as db:
             book = library.get_book(db, self.book_id)
             if book is None:
-                QMessageBox.warning(self, "Not found", "This book no longer exists.")
+                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
                 self.reject()
                 return
             self.isbn.setText(book.isbn or "")
@@ -208,22 +209,24 @@ class BookDialog(QDialog):
     def _on_lookup_clicked(self) -> None:
         raw = self.isbn.text().strip()
         if not raw:
-            self.message.setText("Enter an ISBN first.")
+            self.message.setText(_("Enter an ISBN first."))
             return
         normalized = normalize_isbn(raw)
         if normalized and not is_valid_isbn(normalized):
-            self.message.setText(f"'{normalized}' doesn't look like a valid ISBN; trying anyway…")
+            self.message.setText(
+                _("'%s' doesn't look like a valid ISBN; trying anyway…") % normalized
+            )
         else:
-            self.message.setText("Looking up…")
+            self.message.setText(_("Looking up…"))
         self.lookup_btn.setEnabled(False)
         run_async(lookup_isbn, self._on_lookup_done, self._on_lookup_error, raw)
 
     def _on_lookup_done(self, data: dict | None) -> None:
         self.lookup_btn.setEnabled(True)
         if not data:
-            self.message.setText("No catalogue entry found for that ISBN.")
+            self.message.setText(_("No catalogue entry found for that ISBN."))
             return
-        self.message.setText(f"Filled from {data.get('source') or 'online'}.")
+        self.message.setText(_("Filled from %s.") % (data.get("source") or _("online")))
         if data.get("isbn"):
             self.isbn.setText(data["isbn"])
         if data.get("title"):
@@ -251,7 +254,7 @@ class BookDialog(QDialog):
 
     def _on_lookup_error(self, message: str) -> None:
         self.lookup_btn.setEnabled(True)
-        self.message.setText(f"Lookup failed: {message}")
+        self.message.setText(_("Lookup failed: %s") % message)
 
     # -- result ------------------------------------------------------------- #
     def _set_message(self, text: str, *, ok: bool = False) -> None:
@@ -281,12 +284,14 @@ class BookDialog(QDialog):
             else:  # QSpinBox
                 widget.setValue(0)
         self._source = "manual"
-        self._set_message("Added. Scan or type the next ISBN.", ok=True)
+        self._set_message(_("Added. Scan or type the next ISBN."), ok=True)
         self.isbn.setFocus()
 
     def _on_save(self) -> None:
         if not self.title.text().strip():
-            self.message.setText("A title is required (it will be saved as 'Untitled' if blank).")
+            self.message.setText(
+                _("A title is required (it will be saved as 'Untitled' if blank).")
+            )
         if (
             self.book_id is None
             and self.keep_open is not None
@@ -295,7 +300,7 @@ class BookDialog(QDialog):
         ):
             error = self.on_bulk_save(self.data())
             if error:
-                self._set_message(f"Could not save: {error}")
+                self._set_message(_("Could not save: %s") % error)
                 return
             self._clear_for_next()
             return
@@ -339,7 +344,7 @@ class BookDetailsDialog(QDialog):
         super().__init__(parent)
         self.book_id = book_id
         self.on_change = on_change
-        self.setWindowTitle("Book details")
+        self.setWindowTitle(_("Book details"))
         self.setMinimumWidth(640)
         self._build_ui()
         self._load()
@@ -385,11 +390,11 @@ class BookDetailsDialog(QDialog):
         meta = QFormLayout()
         meta.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for key, label in (
-            ("publisher", "Publisher"),
-            ("published", "Published"),
-            ("isbn", "ISBN"),
-            ("location", "Location"),
-            ("loan", "Current loan"),
+            ("publisher", _("Publisher")),
+            ("published", _("Published")),
+            ("isbn", _("ISBN")),
+            ("location", _("Location")),
+            ("loan", _("Current loan")),
         ):
             value = QLabel("")
             value.setWordWrap(True)
@@ -398,23 +403,25 @@ class BookDetailsDialog(QDialog):
             meta.addRow(label, value)
 
         # --- description & notes ------------------------------------------ #
-        self.description_label = QLabel("Description")
+        self.description_label = QLabel(_("Description"))
         self.description_label.setObjectName("SectionTitle")
         self.description = QLabel("")
         self.description.setWordWrap(True)
         self.description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
-        self.notes_label = QLabel("Notes")
+        self.notes_label = QLabel(_("Notes"))
         self.notes_label.setObjectName("SectionTitle")
         self.notes = QLabel("")
         self.notes.setWordWrap(True)
         self.notes.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
         # --- loan history -------------------------------------------------- #
-        self.loans_label = QLabel("Loan history")
+        self.loans_label = QLabel(_("Loan history"))
         self.loans_label.setObjectName("SectionTitle")
         self.loans = QTableWidget(0, 4)
-        self.loans.setHorizontalHeaderLabels(["Borrower", "Lent", "Due", "Returned"])
+        self.loans.setHorizontalHeaderLabels(
+            [_("Borrower"), _("Lent"), _("Due"), _("Returned")]
+        )
         self.loans.verticalHeader().setVisible(False)
         self.loans.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.loans.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -424,10 +431,10 @@ class BookDetailsDialog(QDialog):
         self.loans.setMinimumHeight(140)
 
         # --- buttons ------------------------------------------------------- #
-        edit_btn = QPushButton("Edit details")
+        edit_btn = QPushButton(_("Edit details"))
         edit_btn.setProperty("variant", "primary")
         edit_btn.clicked.connect(self._edit)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(_("Close"))
         close_btn.clicked.connect(self.reject)
 
         buttons = QHBoxLayout()
@@ -454,12 +461,12 @@ class BookDetailsDialog(QDialog):
         with session_scope() as db:
             book = library.get_book(db, self.book_id)
             if book is None:
-                QMessageBox.warning(self, "Not found", "This book no longer exists.")
+                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
                 self.reject()
                 return
 
             self.cover.load(book.cover_url, book.title or "")
-            self.title_label.setText(book.title or "Untitled")
+            self.title_label.setText(book.title or _("Untitled"))
             self.subtitle_label.setText(book.subtitle or "")
             self.subtitle_label.setVisible(bool(book.subtitle))
             self.authors_label.setText(book.author_display or "")
@@ -480,9 +487,9 @@ class BookDetailsDialog(QDialog):
             )
             if book.page_count:
                 published = (
-                    f"{published} · {book.page_count} pp."
+                    _("%s · %s pp.") % (published, book.page_count)
                     if published
-                    else f"{book.page_count} pp."
+                    else _("%s pp.") % book.page_count
                 )
             self.fields["published"].setText(published or "—")
             self.fields["isbn"].setText(book.isbn or "—")
@@ -490,13 +497,19 @@ class BookDetailsDialog(QDialog):
 
             loan = book.active_loan
             if loan:
-                due = f" due {format_date(loan.due_at)}" if loan.due_at else ""
-                overdue = " · OVERDUE" if loan.is_overdue else ""
+                due = _(" due %s") % format_date(loan.due_at) if loan.due_at else ""
+                overdue = _(" · OVERDUE") if loan.is_overdue else ""
                 self.fields["loan"].setText(
-                    f"{loan.borrower_name} since {format_date(loan.lent_at)}{due}{overdue}"
+                    _("%(borrower)s since %(lent)s%(due)s%(overdue)s")
+                    % {
+                        "borrower": loan.borrower_name,
+                        "lent": format_date(loan.lent_at),
+                        "due": due,
+                        "overdue": overdue,
+                    }
                 )
             else:
-                self.fields["loan"].setText("Not on loan")
+                self.fields["loan"].setText(_("Not on loan"))
 
             self.description.setText(book.description or "")
             self.description.setVisible(bool(book.description))
@@ -512,7 +525,7 @@ class BookDetailsDialog(QDialog):
                         loan.borrower_name,
                         format_date(loan.lent_at),
                         format_date(loan.due_at),
-                        format_date(loan.returned_at) or "on loan",
+                        format_date(loan.returned_at) or _("on loan"),
                     )
                 ):
                     self.loans.setItem(row, col, QTableWidgetItem(text))
@@ -528,10 +541,10 @@ class BookDetailsDialog(QDialog):
             with session_scope() as db:
                 book = library.get_book(db, self.book_id)
                 if book is None:
-                    raise ValueError("This book no longer exists.")
+                    raise ValueError(_("This book no longer exists."))
                 library.update_book(db, book, dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self._load()
         if self.on_change is not None:
@@ -544,18 +557,18 @@ class BookDetailsDialog(QDialog):
 class LendDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, *, book_title: str = "") -> None:
         super().__init__(parent)
-        self.setWindowTitle("Lend book")
+        self.setWindowTitle(_("Lend book"))
         self.setMinimumWidth(420)
         form = QFormLayout()
 
         self.borrower = QLineEdit()
-        self.borrower.setPlaceholderText("Required")
+        self.borrower.setPlaceholderText(_("Required"))
         self.contact = QLineEdit()
 
         self.lent_at = QDateEdit(QDate.currentDate())
         self.lent_at.setCalendarPopup(True)
 
-        self.has_due = QCheckBox("Set a due date")
+        self.has_due = QCheckBox(_("Set a due date"))
         self.due_at = QDateEdit(QDate.currentDate().addDays(30))
         self.due_at.setCalendarPopup(True)
         self.due_at.setEnabled(False)
@@ -563,19 +576,19 @@ class LendDialog(QDialog):
         due_row = QHBoxLayout()
         due_row.addWidget(self.due_at, 1)
 
-        self.mark_status = QCheckBox("Mark the book as 'Lent out'")
+        self.mark_status = QCheckBox(_("Mark the book as 'Lent out'"))
         self.mark_status.setChecked(True)
 
         self.notes = QPlainTextEdit()
         self.notes.setFixedHeight(60)
 
-        form.addRow("Book", QLabel(book_title or "—"))
-        form.addRow("Borrower", self.borrower)
-        form.addRow("Contact", self.contact)
-        form.addRow("Lent on", self.lent_at)
+        form.addRow(_("Book"), QLabel(book_title or "—"))
+        form.addRow(_("Borrower"), self.borrower)
+        form.addRow(_("Contact"), self.contact)
+        form.addRow(_("Lent on"), self.lent_at)
         form.addRow(self.has_due, self.due_at)
         form.addRow("", self.mark_status)
-        form.addRow("Notes", self.notes)
+        form.addRow(_("Notes"), self.notes)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -590,7 +603,7 @@ class LendDialog(QDialog):
 
     def _on_ok(self) -> None:
         if not self.borrower.text().strip():
-            QMessageBox.warning(self, "Borrower required", "Please enter the borrower's name.")
+            QMessageBox.warning(self, _("Borrower required"), _("Please enter the borrower's name."))
             return
         self.accept()
 
@@ -618,7 +631,7 @@ class LocationDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.location_id = location_id
-        self.setWindowTitle("Add location" if location_id is None else "Edit location")
+        self.setWindowTitle(_("Add location") if location_id is None else _("Edit location"))
         self.setMinimumWidth(420)
         self._build_ui(preselect_parent)
         if location_id is not None:
@@ -629,17 +642,17 @@ class LocationDialog(QDialog):
         self.name = QLineEdit()
         self.parent = QComboBox()
         self.kind = QLineEdit()
-        self.kind.setPlaceholderText("room, bookcase, shelf, box…")
+        self.kind.setPlaceholderText(_("room, bookcase, shelf, box…"))
         self.description = QPlainTextEdit()
         self.description.setFixedHeight(70)
-        form.addRow("Name", self.name)
-        form.addRow("Parent", self.parent)
-        form.addRow("Kind", self.kind)
-        form.addRow("Description", self.description)
+        form.addRow(_("Name"), self.name)
+        form.addRow(_("Parent"), self.parent)
+        form.addRow(_("Kind"), self.kind)
+        form.addRow(_("Description"), self.description)
 
         with session_scope() as db:
             choices = location_choices(db)
-        fill_combo(self.parent, choices, none_label="— top level —", current=preselect_parent)
+        fill_combo(self.parent, choices, none_label=_("— top level —"), current=preselect_parent)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -658,7 +671,7 @@ class LocationDialog(QDialog):
         with session_scope() as db:
             location = db.get(Location, self.location_id)
             if location is None:
-                QMessageBox.warning(self, "Not found", "This location no longer exists.")
+                QMessageBox.warning(self, _("Not found"), _("This location no longer exists."))
                 self.reject()
                 return
             self.name.setText(location.name or "")
@@ -670,7 +683,7 @@ class LocationDialog(QDialog):
 
     def _on_ok(self) -> None:
         if not self.name.text().strip():
-            QMessageBox.warning(self, "Name required", "Please enter a location name.")
+            QMessageBox.warning(self, _("Name required"), _("Please enter a location name."))
             return
         self.accept()
 
@@ -691,7 +704,7 @@ class StatusDialog(QDialog):
         super().__init__(parent)
         self.status_id = status_id
         self._color = "#64748b"
-        self.setWindowTitle("Add status" if status_id is None else "Edit status")
+        self.setWindowTitle(_("Add status") if status_id is None else _("Edit status"))
         self.setMinimumWidth(420)
         self._build_ui()
         if status_id is not None:
@@ -701,7 +714,7 @@ class StatusDialog(QDialog):
         form = QFormLayout()
         self.name = QLineEdit()
         self.icon = QLineEdit()
-        self.icon.setPlaceholderText("optional emoji, e.g. 📚")
+        self.icon.setPlaceholderText(_("optional emoji, e.g. 📚"))
         self.description = QPlainTextEdit()
         self.description.setFixedHeight(70)
 
@@ -709,10 +722,10 @@ class StatusDialog(QDialog):
         self.color_btn.clicked.connect(self._pick_color)
         self._render_color()
 
-        form.addRow("Name", self.name)
-        form.addRow("Colour", self.color_btn)
-        form.addRow("Icon", self.icon)
-        form.addRow("Description", self.description)
+        form.addRow(_("Name"), self.name)
+        form.addRow(_("Colour"), self.color_btn)
+        form.addRow(_("Icon"), self.icon)
+        form.addRow(_("Description"), self.description)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -732,7 +745,7 @@ class StatusDialog(QDialog):
         )
 
     def _pick_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self._color), self, "Pick a colour")
+        color = QColorDialog.getColor(QColor(self._color), self, _("Pick a colour"))
         if color.isValid():
             self._color = color.name()
             self._render_color()
@@ -743,7 +756,7 @@ class StatusDialog(QDialog):
         with session_scope() as db:
             status = db.get(Status, self.status_id)
             if status is None:
-                QMessageBox.warning(self, "Not found", "This status no longer exists.")
+                QMessageBox.warning(self, _("Not found"), _("This status no longer exists."))
                 self.reject()
                 return
             self.name.setText(status.name or "")
@@ -755,7 +768,7 @@ class StatusDialog(QDialog):
 
     def _on_ok(self) -> None:
         if not self.name.text().strip():
-            QMessageBox.warning(self, "Name required", "Please enter a status name.")
+            QMessageBox.warning(self, _("Name required"), _("Please enter a status name."))
             return
         self.accept()
 

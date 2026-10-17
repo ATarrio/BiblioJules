@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
+from ..i18n import _
 from ..services import library
 from ..services.isbn_lookup import search_books
 from .db import session_scope
@@ -36,9 +38,9 @@ class DiscoverView(QWidget):
 
     def _build_ui(self) -> None:
         self.query = QLineEdit()
-        self.query.setPlaceholderText("Search Open Library / Google Books by title or author…")
+        self.query.setPlaceholderText(_("Search Open Library / Google Books by title or author…"))
         self.query.returnPressed.connect(self._search)
-        self.search_btn = QPushButton("Search")
+        self.search_btn = QPushButton(_("Search"))
         self.search_btn.setProperty("variant", "primary")
         self.search_btn.clicked.connect(self._search)
 
@@ -49,11 +51,13 @@ class DiscoverView(QWidget):
         search_row.addWidget(self.query, 1)
         search_row.addWidget(self.search_btn)
 
-        self.message = QLabel("Find books you don't own yet and add them to your wishlist.")
+        self.message = QLabel(_("Find books you don't own yet and add them to your wishlist."))
         self.message.setObjectName("Dim")
 
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Title", "Authors", "Year", "Publisher", "Source"])
+        self.table.setHorizontalHeaderLabels(
+            [_("Title"), _("Authors"), _("Year"), _("Publisher"), _("Source")]
+        )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -64,7 +68,7 @@ class DiscoverView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self._add_selected())
 
-        add_btn = QPushButton("＋  Add selected to wishlist")
+        add_btn = QPushButton("＋  " + _("Add selected to wishlist"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add_selected)
 
@@ -77,8 +81,8 @@ class DiscoverView(QWidget):
         layout.setSpacing(16)
         layout.addWidget(
             page_header(
-                "Discover",
-                "Search the online catalogues and add books you want to buy to your wishlist.",
+                _("Discover"),
+                _("Search the online catalogues and add books you want to buy to your wishlist."),
             )
         )
         layout.addWidget(search_card)
@@ -96,20 +100,24 @@ class DiscoverView(QWidget):
         if not query:
             return
         self.search_btn.setEnabled(False)
-        self.message.setText(f"Searching for “{query}”…")
+        self.message.setText(_("Searching for “%s”…") % query)
         self.table.setRowCount(0)
         run_async(search_books, self._on_results, self._on_error, query)
 
     def _on_results(self, results: list[dict]) -> None:
         self.search_btn.setEnabled(True)
         if not results:
-            self.message.setText("No matches found.")
+            self.message.setText(_("No matches found."))
             return
-        self.message.setText(f"{len(results)} match(es) found. Double-click to add one.")
-        self.table.setRowCount(len(results))
+        count = len(results)
+        self.message.setText(
+            i18n.ngettext("%d match found. Double-click to add one.",
+                          "%d matches found. Double-click to add one.", count) % count
+        )
+        self.table.setRowCount(count)
         for row_index, result in enumerate(results):
             values = [
-                result.get("title") or "(untitled)",
+                result.get("title") or _("(untitled)"),
                 ", ".join(result.get("authors") or []),
                 str(result.get("published_year") or ""),
                 result.get("publisher") or "",
@@ -123,13 +131,13 @@ class DiscoverView(QWidget):
 
     def _on_error(self, message: str) -> None:
         self.search_btn.setEnabled(True)
-        self.message.setText(f"Search failed: {message}")
+        self.message.setText(_("Search failed: %s") % message)
 
     # -- add ---------------------------------------------------------------- #
     def _add_selected(self) -> None:
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.information(self, "No selection", "Select a search result first.")
+            QMessageBox.information(self, _("No selection"), _("Select a search result first."))
             return
         item = self.table.item(row, 0)
         result = item.data(_RESULT) if item else None
@@ -140,7 +148,9 @@ class DiscoverView(QWidget):
             existing = library.find_by_isbn(db, result.get("isbn") or "")
             if existing is not None:
                 QMessageBox.information(
-                    self, "Already in catalog", f"“{existing.title}” is already in your library."
+                    self,
+                    _("Already in catalog"),
+                    _("“%s” is already in your library.") % existing.title,
                 )
                 return
             wishlist = library.get_status_by_slug(db, "wishlist")
@@ -164,8 +174,8 @@ class DiscoverView(QWidget):
             try:
                 library.create_book(db, data)
             except Exception as exc:  # noqa: BLE001
-                QMessageBox.critical(self, "Could not add", str(exc))
+                QMessageBox.critical(self, _("Could not add"), str(exc))
                 return
 
-        self.message.setText("Added to your wishlist.")
+        self.message.setText(_("Added to your wishlist."))
         self.on_change()

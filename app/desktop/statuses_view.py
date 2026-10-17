@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
+from ..i18n import _
 from ..services import library
 from .db import session_scope
 from .dialogs import StatusDialog
@@ -34,7 +36,9 @@ class StatusesView(QWidget):
 
     def _build_ui(self) -> None:
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["", "Status", "Icon", "Type", "Description"])
+        self.table.setHorizontalHeaderLabels(
+            ["", _("Status"), _("Icon"), _("Type"), _("Description")]
+        )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -47,12 +51,12 @@ class StatusesView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.itemDoubleClicked.connect(lambda *_: self._edit())
 
-        add_btn = QPushButton("＋  Add")
+        add_btn = QPushButton("＋  " + _("Add"))
         add_btn.setProperty("variant", "primary")
         add_btn.clicked.connect(self._add)
-        edit_btn = QPushButton("Edit")
+        edit_btn = QPushButton(_("Edit"))
         edit_btn.clicked.connect(self._edit)
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton(_("Delete"))
         delete_btn.setProperty("variant", "danger")
         delete_btn.clicked.connect(self._delete)
 
@@ -68,8 +72,8 @@ class StatusesView(QWidget):
         layout.setSpacing(16)
         layout.addWidget(
             page_header(
-                "Statuses",
-                "Track where each book is: shelved, being read, lent out, or on the wishlist.",
+                _("Statuses"),
+                _("Track where each book is: shelved, being read, lent out, or on the wishlist."),
             )
         )
         layout.addWidget(self.table, 1)
@@ -82,9 +86,9 @@ class StatusesView(QWidget):
             rows = [
                 (
                     status.id,
-                    status.name,
+                    i18n.status_label(status),
                     status.icon or "",
-                    "built-in" if status.is_system else "custom",
+                    _("built-in") if status.is_system else _("custom"),
                     status.color or "#64748b",
                     status.description or "",
                 )
@@ -125,7 +129,7 @@ class StatusesView(QWidget):
     def _require_selection(self) -> int | None:
         status_id = self._selected_id()
         if status_id is None:
-            QMessageBox.information(self, "No selection", "Select a status first.")
+            QMessageBox.information(self, _("No selection"), _("Select a status first."))
         return status_id
 
     # -- actions ------------------------------------------------------------ #
@@ -137,7 +141,7 @@ class StatusesView(QWidget):
             with session_scope() as db:
                 library.create_status(db, **dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
@@ -154,10 +158,10 @@ class StatusesView(QWidget):
 
                 status = db.get(Status, status_id)
                 if status is None:
-                    raise ValueError("This status no longer exists.")
+                    raise ValueError(_("This status no longer exists."))
                 library.update_status(db, status, **dialog.data())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not save", str(exc))
+            QMessageBox.critical(self, _("Could not save"), str(exc))
             return
         self.on_change()
 
@@ -171,19 +175,21 @@ class StatusesView(QWidget):
 
                 status = db.get(Status, status_id)
                 if status is None:
-                    raise ValueError("This status no longer exists.")
+                    raise ValueError(_("This status no longer exists."))
                 if (
                     QMessageBox.question(
-                        self, "Delete status", f"Delete the “{status.name}” status?"
+                        self,
+                        _("Delete status"),
+                        _("Delete the “%s” status?") % status.name,
                     )
                     != QMessageBox.StandardButton.Yes
                 ):
                     return
                 library.delete_status(db, status)
         except ValueError as exc:
-            QMessageBox.warning(self, "Cannot delete", str(exc))
+            QMessageBox.warning(self, _("Cannot delete"), str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Could not delete", str(exc))
+            QMessageBox.critical(self, _("Could not delete"), str(exc))
             return
         self.on_change()

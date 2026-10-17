@@ -42,6 +42,10 @@ SQLite by default, but the database layer is fully abstracted so switching to
   app) for a pop-up with its full details — cover included — plus a one-click
   shortcut to edit them.
 - **Sleek & responsive** UI with dark mode, works on phone, tablet and desktop.
+- **Multilingual UI.** English is the default; a Latin American Spanish
+  (`es-419`) translation ships alongside. Switch language from the sidebar (web)
+  or the language picker (desktop) — the choice is remembered. Adding another
+  language only means dropping a `app/locales/<code>.json` file (see below).
 - **JSON API** (`/api/...`) and interactive API docs at `/docs`, so a future
   mobile app or SPA can reuse the same backend.
 
@@ -131,6 +135,9 @@ path there.
 │   ├── config.py          # Settings (DATABASE_URL, timeouts…) via pydantic-settings
 │   ├── database.py        # Engine, session, Declarative Base
 │   ├── templating.py      # Jinja2 environment + filters
+│   ├── i18n.py            # Translation core (gettext-style) + language middleware
+│   ├── preferences.py     # Small JSON prefs store (desktop UI language, ...)
+│   ├── locales/           # Translation catalogs, e.g. es-419.json (English = source)
 │   ├── schemas.py         # Pydantic request models for the JSON API
 │   ├── models/            # SQLAlchemy models (one file per concept)
 │   │   ├── book.py  author.py  publisher.py
@@ -246,6 +253,32 @@ Interactive docs: <http://127.0.0.1:8000/docs>
   async function and adding it to the provider list.
 - **Statuses like the wishlist** are wired by *slug* (`wishlist`, `lent`,
   `available`…). Renaming them is fine; the slug stays.
+
+---
+
+## Languages (i18n)
+
+English is the source language and the default. Translations live in
+`app/locales/<code>.json` as simple `{ "English text": "translation" }` maps, so
+nothing has to be compiled:
+
+```
+app/locales/es-419.json   # Español (Latinoamérica)
+```
+
+- **Web:** the language is picked from `?lang=`, the `lang` cookie, or the
+  browser's `Accept-Language` header (in that order). Use the selector at the
+  bottom of the sidebar (or in the mobile header); the choice is stored in a
+  cookie.
+- **Desktop:** use the selector at the bottom of the sidebar. The choice is saved
+  in `data/preferences.json` and applied on the next launch.
+- **Adding a language:** copy `app/locales/es-419.json`, translate the values,
+  and add the code + endonym to `SUPPORTED_LANGUAGES` in `app/i18n.py`. A missing
+  key simply falls back to the English text written in the code, so a partial
+  catalog is fine.
+- Plural forms use an object value: `"book": { "one": "libro", "other": "libros" }`.
+- The built-in status names (In library, Reading, …) are translated by *slug*;
+  if you rename one, your name is shown as-is.
 
 ---
 
