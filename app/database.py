@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import MetaData, create_engine, event
+from sqlalchemy import MetaData, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -74,3 +74,42 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+# --------------------------------------------------------------------------- #
+# Lightweight schema sync
+# --------------------------------------------------------------------------- #
+def ensure_schema() -> None:
+    """Add columns that the models define but an existing table lacks.
+
+    ``Base.metadata.create_all`` only creates missing *tables*; it never alters
+    an existing one. The bundled SQLite databases are created that way (without
+    an Alembic version table), so a model that gains a column would otherwise
+    leave older databases behind. This adds each missing column in place — a
+    cheap, idempotent ``ALTER TABLE ADD COLUMN`` that is safe to run at startup.
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {column["name"] for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                connection.execute(text(_add_column_statement(connection, table.name, column)))
+
+
+def _add_column_statement(connection, table_name: str, column) -> str:
+    type_sql = column.type.compile(dialect=connection.dialect)
+    statement = f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {type_sql}'
+    if not column.nullable:
+        server_default = getattr(column, "server_default", None)
+        if server_default is None:
+            raise RuntimeError(
+                f"Cannot add required column {table_name}.{column.name} to an existing "
+                "database without a server default; use an Alembic migration instead."
+            )
+        statement += f" DEFAULT {server_default.arg}"
+    return statement

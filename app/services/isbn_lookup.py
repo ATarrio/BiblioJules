@@ -71,7 +71,7 @@ def is_valid_isbn(isbn: str) -> bool:
     return False
 
 
-def _extract_year(value: Any) -> int | None:
+def extract_year(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, int):
@@ -117,7 +117,7 @@ async def _open_library_by_isbn(client: httpx.AsyncClient, isbn: str) -> dict | 
             None,
         ),
         "published_date": entry.get("publish_date"),
-        "published_year": _extract_year(entry.get("publish_date")),
+        "published_year": extract_year(entry.get("publish_date")),
         "description": None,
         "page_count": entry.get("number_of_pages"),
         "language": None,
@@ -152,7 +152,7 @@ async def _google_books_by_isbn(client: httpx.AsyncClient, isbn: str) -> dict | 
         "authors": authors,
         "publisher": info.get("publisher"),
         "published_date": info.get("publishedDate"),
-        "published_year": _extract_year(info.get("publishedDate")),
+        "published_year": extract_year(info.get("publishedDate")),
         "description": info.get("description"),
         "page_count": info.get("pageCount"),
         "language": info.get("language"),
@@ -267,7 +267,7 @@ async def _google_search(client: httpx.AsyncClient, query: str, limit: int) -> l
                 "authors": info.get("authors") or [],
                 "publisher": info.get("publisher"),
                 "published_date": info.get("publishedDate"),
-                "published_year": _extract_year(info.get("publishedDate")),
+                "published_year": extract_year(info.get("publishedDate")),
                 "description": info.get("description"),
                 "page_count": info.get("pageCount"),
                 "language": info.get("language"),

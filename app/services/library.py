@@ -12,9 +12,10 @@ from datetime import date
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from ..models import Author, Book, Loan, Location, Publisher, Status
+from ..book_fields import COVER_TYPE_SLUGS, MAX_SCORE, MIN_SCORE, READ_STATUS_SLUGS, SCORE_STEP
 from ..i18n import _
-from .isbn_lookup import is_valid_isbn, normalize_isbn
+from ..models import Author, Book, Loan, Location, Publisher, Status
+from .isbn_lookup import extract_year, is_valid_isbn, normalize_isbn
 
 # --------------------------------------------------------------------------- #
 # Small helpers
@@ -85,6 +86,20 @@ def _to_id(value) -> int | None:
         return None
 
 
+def _to_score(value) -> float | None:
+    """Parse a 0.5–5.0 star score (blank/0 becomes None), snapped to half stars."""
+    if value in (None, ""):
+        return None
+    try:
+        score = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    if score <= 0:
+        return None
+    score = round(score / SCORE_STEP) * SCORE_STEP
+    return max(MIN_SCORE, min(MAX_SCORE, score))
+
+
 # --------------------------------------------------------------------------- #
 # Books
 # --------------------------------------------------------------------------- #
@@ -97,16 +112,44 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
     if "title" in data:
         book.title = (data.get("title") or "").strip() or "Untitled"
 
-    for field in ("subtitle", "published_date", "description", "language",
+    for field in ("subtitle", "description", "language",
                   "cover_url", "notes", "source"):
         if field in data:
             value = data.get(field)
             setattr(book, field, value.strip() if isinstance(value, str) else value)
 
+    # ``published_date`` is the one field the user edits. ``published_year`` is
+    # a cached projection of it, kept only so sorting stays a simple indexed
+    # column; it is always recomputed here.
+    if "published_date" in data:
+        value = data.get("published_date")
+        book.published_date = value.strip() if isinstance(value, str) and value.strip() else None
     if "published_year" in data:
-        book.published_year = _to_int(data.get("published_year"))
+        year = _to_int(data.get("published_year"))
+        if not book.published_date and year:
+            # Year-only input (e.g. an online lookup) still fills the single
+            # date field, so it shows up in the form and can be edited.
+            book.published_date = str(year)
+    if "published_date" in data or "published_year" in data:
+        year = extract_year(book.published_date)
+        if year is None and "published_year" in data:
+            # The date has no parseable year (e.g. "MMV"); keep the supplied one.
+            year = _to_int(data.get("published_year"))
+        book.published_year = year
     if "page_count" in data:
         book.page_count = _to_int(data.get("page_count"))
+    if "cover_type" in data:
+        value = (data.get("cover_type") or "").strip()
+        book.cover_type = value if value in COVER_TYPE_SLUGS else None
+    if "read_status" in data:
+        value = (data.get("read_status") or "").strip()
+        book.read_status = value if value in READ_STATUS_SLUGS else None
+    if "score" in data:
+        book.score = _to_score(data.get("score"))
+    if "saga" in data:
+        book.saga = (data.get("saga") or "").strip() or None
+    if "saga_number" in data:
+        book.saga_number = _to_int(data.get("saga_number"))
     if "location_id" in data:
         book.location_id = _to_id(data.get("location_id"))
     if "status_id" in data:
@@ -171,6 +214,22 @@ def prune_orphans(db: Session) -> None:
     db.commit()
 
 
+def sync_published_years(db: Session) -> None:
+    """Repair older rows so the cached year matches the single date field.
+
+    Books entered before the date/year fields were unified may only have a
+    year; fold it into ``published_date`` so the edit form shows one value, then
+    recompute the cached ``published_year`` used by the catalog's Year sort.
+    """
+    for book in db.scalars(select(Book)).all():
+        if not book.published_date and book.published_year:
+            book.published_date = str(book.published_year)
+        year = extract_year(book.published_date)
+        if year is not None:
+            book.published_year = year
+    db.commit()
+
+
 def find_by_isbn(db: Session, isbn: str) -> Book | None:
     isbn = normalize_isbn(isbn)
     if not isbn:
@@ -187,6 +246,7 @@ def query_books(
     author_id: int | None = None,
     publisher_id: int | None = None,
     loaned: str | None = None,  # "loaned" | "available" | None
+    saga: str | None = None,
     sort: str = "recent",
     descending: bool | None = None,  # None keeps each sort's natural direction
 ) -> list[Book]:
@@ -215,6 +275,8 @@ def query_books(
         location = db.get(Location, location_id)
         if location:
             stmt = stmt.where(Book.location_id.in_(location.descendant_ids()))
+    if saga:
+        stmt = stmt.where(func.lower(Book.saga) == saga.strip().lower())
 
     if loaned == "loaned":
         stmt = stmt.join(Book.loans).where(Loan.returned_at.is_(None)).distinct()
@@ -235,6 +297,14 @@ def query_books(
         # Author names live on the other side of a many-to-many join, so sort
         # the loaded rows in Python (cheap for a personal library).
         pass
+    elif sort == "saga":
+        # Group a saga's books together, in reading order, then by title.
+        order = func.lower(Book.saga)
+        stmt = stmt.order_by(
+            (order.desc() if descending else order.asc()).nullslast(),
+            Book.saga_number.asc(),
+            func.lower(Book.title),
+        )
     else:  # recent
         newest_first = True if descending is None else descending
         stmt = stmt.order_by(
@@ -428,6 +498,16 @@ def list_authors(db: Session) -> list[Author]:
 
 def list_publishers(db: Session) -> list[Publisher]:
     return list(db.scalars(select(Publisher).order_by(func.lower(Publisher.name))))
+
+
+def list_sagas(db: Session) -> list[str]:
+    """Distinct saga names, alphabetically (for the catalog's saga filter)."""
+    # Sort in Python: ``SELECT DISTINCT`` with an expression in ORDER BY is not
+    # portable (PostgreSQL requires ordered expressions in the select list).
+    names = db.scalars(
+        select(Book.saga).where(Book.saga.is_not(None), Book.saga != "").distinct()
+    )
+    return sorted({name for name in names if name}, key=str.casefold)
 
 
 # --------------------------------------------------------------------------- #

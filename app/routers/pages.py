@@ -37,6 +37,7 @@ def parse_filters(request: Request) -> dict:
         "author_id": _opt_int(qp.get("author")),
         "publisher_id": _opt_int(qp.get("publisher")),
         "loaned": qp.get("loaned") or None,
+        "saga": (qp.get("saga") or "").strip() or None,
         "sort": qp.get("sort") or "recent",
         "dir": direction if direction in ("asc", "desc") else None,
     }
@@ -47,6 +48,7 @@ def parse_filters(request: Request) -> dict:
 _SORT_FIELDS = [
     ("title", "Title", False),
     ("author", "Author", False),
+    ("saga", "Saga", False),
     ("year", "Year", True),
 ]
 
@@ -58,6 +60,7 @@ _SORT_FILTER_PARAMS = [
     ("author", "author_id"),
     ("publisher", "publisher_id"),
     ("loaned", "loaned"),
+    ("saga", "saga"),
 ]
 
 
@@ -116,6 +119,7 @@ def catalog_context(db: Session, filters: dict) -> dict:
         "locations": library.flatten_locations(db),
         "authors": library.list_authors(db),
         "publishers": library.list_publishers(db),
+        "sagas": library.list_sagas(db),
         "book_count": len(books),
     }
 

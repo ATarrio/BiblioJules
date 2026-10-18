@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..book_fields import COVER_TYPES, READ_STATUSES
 from ..i18n import _
 from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
@@ -35,10 +37,14 @@ from .cover import CoverImage
 from .db import session_scope
 from .switch import Switch
 from .util import (
+    cover_type_label,
     display_status,
     fill_combo,
     format_date,
     location_choices,
+    read_status_label,
+    score_label,
+    spin_stepper,
     status_choices,
     style_badge,
 )
@@ -106,16 +112,35 @@ class BookDialog(QDialog):
         self.published_date = QLineEdit()
         self.published_date.setPlaceholderText(_("free text, e.g. 1968 or 2005-04-01"))
 
-        self.year = QSpinBox()
-        self.year.setRange(0, 3000)
-        self.year.setSpecialValueText(UNSET_SPIN)
-
         self.pages = QSpinBox()
         self.pages.setRange(0, 200_000)
         self.pages.setSpecialValueText(UNSET_SPIN)
 
         self.language = QLineEdit()
         self.cover_url = QLineEdit()
+
+        self.cover_type = QComboBox()
+        self.cover_type.addItem(_("— none —"), None)
+        for slug, label in COVER_TYPES:
+            self.cover_type.addItem(_(label), slug)
+
+        self.read_status = QComboBox()
+        self.read_status.addItem(_("— none —"), None)
+        for slug, label in READ_STATUSES:
+            self.read_status.addItem(_(label), slug)
+
+        self.score = QDoubleSpinBox()
+        # 0.5 is the "unrated" position (shown as —); real scores run 1.0–5.0.
+        self.score.setRange(0.5, 5)
+        self.score.setSingleStep(0.5)
+        self.score.setDecimals(1)
+        self.score.setSpecialValueText(UNSET_SPIN)
+
+        self.saga = QLineEdit()
+        self.saga.setPlaceholderText("The Expanse")
+        self.saga_number = QSpinBox()
+        self.saga_number.setRange(0, 100_000)
+        self.saga_number.setSpecialValueText(UNSET_SPIN)
 
         self.location = QComboBox()
         self.status = QComboBox()
@@ -129,11 +154,15 @@ class BookDialog(QDialog):
         form.addRow(_("Subtitle"), self.subtitle)
         form.addRow(_("Authors"), self.authors)
         form.addRow(_("Publisher"), self.publisher)
-        form.addRow(_("Published date"), self.published_date)
-        form.addRow(_("Published year"), self.year)
+        form.addRow(_("Published"), self.published_date)
         form.addRow(_("Page count"), self.pages)
         form.addRow(_("Language"), self.language)
         form.addRow(_("Cover URL"), self.cover_url)
+        form.addRow(_("Cover type"), self.cover_type)
+        form.addRow(_("Read status"), self.read_status)
+        form.addRow(_("Score"), spin_stepper(self.score))
+        form.addRow(_("Saga"), self.saga)
+        form.addRow(_("Saga number"), spin_stepper(self.saga_number))
         form.addRow(_("Location"), self.location)
         form.addRow(_("Status"), self.status)
         form.addRow(_("Description"), self.description)
@@ -188,11 +217,19 @@ class BookDialog(QDialog):
             self.subtitle.setText(book.subtitle or "")
             self.authors.setText(", ".join(book.author_names))
             self.publisher.setText(book.publisher.name if book.publisher else "")
-            self.published_date.setText(book.published_date or "")
-            self.year.setValue(book.published_year or 0)
+            self.published_date.setText(
+                book.published_date or (str(book.published_year) if book.published_year else "")
+            )
             self.pages.setValue(book.page_count or 0)
             self.language.setText(book.language or "")
             self.cover_url.setText(book.cover_url or "")
+            index = self.cover_type.findData(book.cover_type)
+            self.cover_type.setCurrentIndex(index if index >= 0 else 0)
+            index = self.read_status.findData(book.read_status)
+            self.read_status.setCurrentIndex(index if index >= 0 else 0)
+            self.score.setValue(float(book.score) if book.score else 0.5)
+            self.saga.setText(book.saga or "")
+            self.saga_number.setValue(book.saga_number or 0)
             self.description.setPlainText(book.description or "")
             self.notes.setPlainText(book.notes or "")
             self._source = book.source
@@ -237,10 +274,9 @@ class BookDialog(QDialog):
             self.authors.setText(", ".join(data["authors"]))
         if data.get("publisher"):
             self.publisher.setText(data["publisher"])
-        if data.get("published_date"):
-            self.published_date.setText(data["published_date"])
-        if data.get("published_year"):
-            self.year.setValue(int(data["published_year"]))
+        published = data.get("published_date") or data.get("published_year")
+        if published:
+            self.published_date.setText(str(published))
         if data.get("page_count"):
             self.pages.setValue(int(data["page_count"]))
         if data.get("language"):
@@ -273,15 +309,21 @@ class BookDialog(QDialog):
             self.authors,
             self.publisher,
             self.published_date,
-            self.year,
             self.pages,
             self.language,
             self.cover_url,
+            self.cover_type,
+            self.read_status,
+            self.score,
+            self.saga,
+            self.saga_number,
             self.description,
         ):
             if isinstance(widget, (QLineEdit, QPlainTextEdit)):
                 widget.clear()
-            else:  # QSpinBox
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentIndex(0)
+            else:  # QSpinBox / QDoubleSpinBox
                 widget.setValue(0)
         self._source = "manual"
         self._set_message(_("Added. Scan or type the next ISBN."), ok=True)
@@ -314,10 +356,14 @@ class BookDialog(QDialog):
             "authors": self.authors.text().strip(),
             "publisher": self.publisher.text().strip(),
             "published_date": self.published_date.text().strip(),
-            "published_year": self.year.value() or None,
             "page_count": self.pages.value() or None,
             "language": self.language.text().strip(),
             "cover_url": self.cover_url.text().strip(),
+            "cover_type": self.cover_type.currentData(),
+            "read_status": self.read_status.currentData(),
+            "score": self.score.value() if self.score.value() >= 1 else None,
+            "saga": self.saga.text().strip(),
+            "saga_number": self.saga_number.value() or None,
             "description": self.description.toPlainText().strip(),
             "notes": self.notes.toPlainText().strip(),
             "location_id": self.location.currentData(),
@@ -393,6 +439,10 @@ class BookDetailsDialog(QDialog):
             ("publisher", _("Publisher")),
             ("published", _("Published")),
             ("isbn", _("ISBN")),
+            ("cover_type", _("Cover type")),
+            ("read_status", _("Read status")),
+            ("score", _("Score")),
+            ("saga", _("Saga")),
             ("location", _("Location")),
             ("loan", _("Current loan")),
         ):
@@ -482,8 +532,8 @@ class BookDetailsDialog(QDialog):
                 self.status_badge.setVisible(False)
 
             self.fields["publisher"].setText(book.publisher.name if book.publisher else "—")
-            published = " ".join(
-                p for p in (book.published_date, str(book.published_year or "")) if p
+            published = book.published_date or (
+                str(book.published_year) if book.published_year else ""
             )
             if book.page_count:
                 published = (
@@ -493,6 +543,13 @@ class BookDetailsDialog(QDialog):
                 )
             self.fields["published"].setText(published or "—")
             self.fields["isbn"].setText(book.isbn or "—")
+            self.fields["cover_type"].setText(cover_type_label(book.cover_type) or "—")
+            self.fields["read_status"].setText(read_status_label(book.read_status) or "—")
+            self.fields["score"].setText(score_label(book.score) or "—")
+            saga = ""
+            if book.saga:
+                saga = book.saga + (f" #{book.saga_number}" if book.saga_number else "")
+            self.fields["saga"].setText(saga or "—")
             self.fields["location"].setText(book.location.full_path if book.location else "—")
 
             loan = book.active_loan

@@ -43,6 +43,7 @@ def list_books(
     author: str | None = None,
     publisher: str | None = None,
     loaned: str | None = None,
+    saga: str | None = None,
     sort: str = "recent",
     db: Session = Depends(get_db),
 ):
@@ -54,6 +55,7 @@ def list_books(
         author_id=_int_or_none(author),
         publisher_id=_int_or_none(publisher),
         loaned=loaned,
+        saga=saga,
         sort=sort,
     )
     return {"count": len(books), "items": [book_to_dict(b) for b in books]}

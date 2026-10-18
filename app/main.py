@@ -12,10 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, engine, ensure_schema
 from .i18n import LanguageMiddleware, _
 from .routers import api, books, health, locations, lookup, pages, statuses
-from .services.library import prune_orphans
+from .services.library import prune_orphans, sync_published_years
 from .services.seed import seed_defaults
 from .templating import templates
 
@@ -26,14 +26,18 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on first run. For a schema that needs to evolve, add
-    # Alembic later — the naming convention is already in place.
+    # Create tables on first run; any columns added to the models since an
+    # older database was created are applied by ensure_schema() below.
     Base.metadata.create_all(bind=engine)
+    # Bring an older database up to date with any new columns.
+    ensure_schema()
 
     # Seed the built-in statuses (available, reading, lent, wishlist...).
     db = SessionLocal()
     try:
         seed_defaults(db)
+        # Fold legacy year-only rows into the single "Published" field.
+        sync_published_years(db)
         # Clear out authors/publishers left behind by earlier book deletions.
         prune_orphans(db)
     finally:

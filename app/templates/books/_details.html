@@ -26,6 +26,10 @@
           (_('Pages'), book.page_count),
           (_('Language'), book.language),
           (_('ISBN'), book.isbn),
+          (_('Cover type'), cover_type_label(book.cover_type)),
+          (_('Read status'), read_status_label(book.read_status)),
+          (_('Score'), score_label(book.score)),
+          (_('Saga'), (book.saga ~ (' #' ~ book.saga_number if book.saga_number else '')) if book.saga else None),
           (_('Location'), book.location.full_path if book.location else None),
         ] %}
         {% for label, value in rows %}

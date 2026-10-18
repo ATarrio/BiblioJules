@@ -30,6 +30,12 @@ SQLite by default, but the database layer is fully abstracted so switching to
 - **Statuses.** Built-in statuses (In library, Reading, Lent out, Wishlist,
   Lost, Donated) that you can rename, recolour, reorder, and extend with your
   own.
+- **Reading metadata.** Record each book's cover type (hardcover, paperback,
+  ebook…), reading status (unread, to be read, currently reading, read, DNF), a
+  1–5 star score (in half-star steps), and its place in a saga (e.g. *Caliban's
+  War* is #2 in *The Expanse*). The catalog can filter by saga; the desktop
+  table also shows saga, read status and score as sortable columns, and the web
+  cards show the saga and score.
 - **Lending tracker.** Record who borrowed a book, when, and when you expect it
   back. Overdue loans are highlighted.
 - **Wishlist.** The `Wishlist` status doubles as a to-buy list. The **Discover**
@@ -184,8 +190,10 @@ existing code stays untouched. That's what keeps this easy to grow.
 ## Data model (at a glance)
 
 - **Book** — ISBN, title/subtitle, `publisher` (many-to-one), `authors`
-  (many-to-many), publication info, description, pages, language, cover URL,
-  `location`, `status`, notes, timestamps.
+  (many-to-many), a single **Published** date field (the year is derived from it
+  for sorting), description, pages, language, cover URL, cover type, read
+  status, a 1–5 star score (half-star steps), saga name + number, `location`,
+  `status`, notes, timestamps.
 - **Location** — self-referential tree (`parent_id`): rooms → shelves → …
 - **Status** — name, colour, emoji, sort order; `is_system` protects the
   built-ins, `is_default` marks the status new books get.
@@ -212,12 +220,19 @@ export DATABASE_URL="mysql+pymysql://user:password@localhost:3306/bibliojules"
 ```
 
 Put it in `.env` to make it permanent. The app creates the tables on startup if
-they don't exist.
+they don't exist, and adds any columns that were introduced after the database
+was created (a safe, idempotent `ALTER TABLE ADD COLUMN`). A few small one-time
+data fix-ups run at the same time — for example, folding a legacy publication
+year into the single **Published** field.
 
 ### Evolving the schema with Alembic
 
 Alembic is already configured (and pointed at the same `DATABASE_URL`). An
 initial migration is included.
+
+> Simple additive changes are applied automatically at startup. Reach for
+> Alembic when a change is more involved (renames, type changes, dropped
+> columns).
 
 ```bash
 alembic upgrade head                              # apply migrations
@@ -234,7 +249,7 @@ scripting or a future front-end:
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `sort`) |
+| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `sort`) |
 | `GET /api/books/{id}` | One book |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Create / update / delete |
 | `POST /api/books/{id}/lend` · `.../return` | Lend or return |

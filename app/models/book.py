@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -28,6 +28,8 @@ class Book(Base):
     publisher: Mapped["Publisher | None"] = relationship(back_populates="books")  # noqa: F821
 
     published_date: Mapped[str | None] = mapped_column(String(60))
+    # Cached projection of ``published_date`` (the field the user edits), kept
+    # so the catalog's Year sort stays a simple indexed column.
     published_year: Mapped[int | None] = mapped_column(Integer, index=True)
 
     description: Mapped[str | None] = mapped_column(Text)
@@ -35,6 +37,15 @@ class Book(Base):
     language: Mapped[str | None] = mapped_column(String(60))
 
     cover_url: Mapped[str | None] = mapped_column(String(1000))
+
+    # Physical format and reading progress (slugs; see app/book_fields.py).
+    cover_type: Mapped[str | None] = mapped_column(String(20))
+    read_status: Mapped[str | None] = mapped_column(String(20))
+    # 0.5–5.0 stars in half-star steps; null means unrated.
+    score: Mapped[float | None] = mapped_column(Float)
+    # A book's place in a series, e.g. "The Expanse" #2.
+    saga: Mapped[str | None] = mapped_column(String(255))
+    saga_number: Mapped[int | None] = mapped_column(Integer)
 
     location_id: Mapped[int | None] = mapped_column(
         ForeignKey("locations.id", ondelete="SET NULL"), index=True

@@ -12,8 +12,8 @@ from typing import Iterator
 
 from sqlalchemy.orm import Session
 
-from ..database import Base, SessionLocal, engine
-from ..services.library import prune_orphans
+from ..database import Base, SessionLocal, engine, ensure_schema
+from ..services.library import prune_orphans, sync_published_years
 from ..services.seed import seed_defaults
 
 
@@ -39,7 +39,11 @@ def initialize_database() -> None:
     launched first and still produce a usable, seeded catalog.
     """
     Base.metadata.create_all(bind=engine)
+    # Bring an older database up to date with any new columns.
+    ensure_schema()
     with session_scope() as db:
         seed_defaults(db)
+        # Fold legacy year-only rows into the single "Published" field.
+        sync_published_years(db)
         # Clear out authors/publishers left behind by earlier book deletions.
         prune_orphans(db)

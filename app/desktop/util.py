@@ -7,15 +7,19 @@ from typing import Any, Callable, Iterable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QComboBox,
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QPushButton,
     QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from .. import i18n
+from ..book_fields import cover_type_label, read_status_label, score_label
 from ..services import library
 from ..models import Status
 from .theme import rgba
@@ -44,10 +48,10 @@ def status_choices(db) -> list[tuple[int, str]]:
 
 def fill_combo(
     combo: QComboBox,
-    choices: Iterable[tuple[int, str]],
+    choices: Iterable[tuple[Any, str]],
     *,
     none_label: str | None = None,
-    current: int | None = None,
+    current: Any | None = None,
 ) -> None:
     """Repopulate a combo box, optionally with a leading "none" entry."""
     combo.blockSignals(True)
@@ -105,6 +109,39 @@ def card() -> QFrame:
     frame = QFrame()
     frame.setObjectName("Card")
     return frame
+
+
+def spin_stepper(spin: QAbstractSpinBox, *, width: int = 84) -> QWidget:
+    """Wrap a spin box with visible − / + buttons.
+
+    The theme hides the native up/down arrows, so these are the mouse-friendly
+    way to change the value. The wrapper keeps the control compact in a form.
+    """
+    spin.setFixedWidth(width)
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    row.addWidget(_step_button("−", spin.stepDown))
+    row.addWidget(spin)
+    row.addWidget(_step_button("+", spin.stepUp))
+    row.addStretch(1)
+
+    container = QWidget()
+    container.setLayout(row)
+    return container
+
+
+def _step_button(label: str, slot) -> QPushButton:
+    button = QPushButton(label)
+    button.setProperty("variant", "ghost")
+    button.setFixedSize(32, 30)
+    button.setStyleSheet("padding: 0; font-size: 16px; font-weight: 700;")
+    button.setAutoRepeat(True)
+    button.setAutoRepeatDelay(350)
+    button.setAutoRepeatInterval(80)
+    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    button.clicked.connect(lambda: slot())
+    return button
 
 
 class ColumnSort:

@@ -64,6 +64,13 @@
     <option value="available" {{ 'selected' if filters.loaned == 'available' }}>{{ _('Available only') }}</option>
   </select>
 
+  <select name="saga" class="rounded-lg border border-slate-300 bg-white py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+    <option value="">{{ _('All sagas') }}</option>
+    {% for saga in sagas %}
+      <option value="{{ saga }}" {{ 'selected' if filters.saga == saga }}>{{ saga }}</option>
+    {% endfor %}
+  </select>
+
   {# Current sort, kept in sync with the grid by app.js so filter changes don't reset it. #}
   <input type="hidden" name="sort" value="{{ filters.sort }}">
   <input type="hidden" name="dir" value="{{ filters.dir or '' }}">

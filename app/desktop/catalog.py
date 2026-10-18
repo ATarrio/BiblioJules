@@ -26,11 +26,26 @@ from ..i18n import _
 from ..services import library
 from ..services.serializers import book_to_dict
 from .db import session_scope
-from .util import ColumnSort, card, fill_combo, location_choices, page_header, status_choices
+from .util import (
+    ColumnSort,
+    card,
+    fill_combo,
+    location_choices,
+    page_header,
+    read_status_label,
+    score_label,
+    status_choices,
+)
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog
 
 # (value, English source label); translated when the combo is built.
-_SORTS = [("recent", "Newest first"), ("title", "Title"), ("author", "Author"), ("year", "Year")]
+_SORTS = [
+    ("recent", "Newest first"),
+    ("title", "Title"),
+    ("author", "Author"),
+    ("year", "Year"),
+    ("saga", "Saga"),
+]
 _LOANED = [(None, "Any"), ("loaned", "On loan"), ("available", "Available")]
 
 
@@ -48,6 +63,7 @@ class CatalogView(QWidget):
 
         self.status = QComboBox()
         self.location = QComboBox()
+        self.saga = QComboBox()
 
         self.loaned = QComboBox()
         for value, label in _LOANED:
@@ -68,13 +84,24 @@ class CatalogView(QWidget):
         filter_row.addWidget(self.search, 2)
         filter_row.addWidget(self.status, 1)
         filter_row.addWidget(self.location, 1)
+        filter_row.addWidget(self.saga, 1)
         filter_row.addWidget(self.loaned)
         filter_row.addWidget(self.sort)
         filter_row.addWidget(refresh_btn)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
-            [_("Title"), _("Author(s)"), _("Status"), _("Location"), _("Year"), _("Loan")]
+            [
+                _("Title"),
+                _("Author(s)"),
+                _("Saga"),
+                _("Read status"),
+                _("Score"),
+                _("Status"),
+                _("Location"),
+                _("Year"),
+                _("Loan"),
+            ]
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -85,11 +112,8 @@ class CatalogView(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(38)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        for column in range(1, 9):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemDoubleClicked.connect(lambda *_: self._details())
 
         # Clicking a column header orders the rows (again to flip ascending/descending).
@@ -99,10 +123,16 @@ class CatalogView(QWidget):
             {
                 0: lambda row: (row["title"] or "").casefold(),
                 1: lambda row: ", ".join(row.get("authors") or []).casefold(),
-                2: lambda row: self._status_text(row).casefold(),
-                3: lambda row: ((row.get("location") or {}).get("full_path") or "").casefold(),
-                4: lambda row: (row.get("published_year") is None, row.get("published_year") or 0),
-                5: lambda row: self._loan_text(row).casefold(),
+                2: lambda row: self._saga_text(row).casefold(),
+                3: lambda row: (read_status_label(row.get("read_status")) or "").casefold(),
+                4: lambda row: (row.get("score") is None, row.get("score") or 0),
+                5: lambda row: self._status_text(row).casefold(),
+                6: lambda row: ((row.get("location") or {}).get("full_path") or "").casefold(),
+                7: lambda row: (
+                    row.get("published_year") is None,
+                    row.get("published_year") or 0,
+                ),
+                8: lambda row: self._loan_text(row).casefold(),
             },
             self._render_rows,
         )
@@ -147,6 +177,7 @@ class CatalogView(QWidget):
         # Changing a filter (or the "order by" combo) refreshes the list at once.
         self.status.currentIndexChanged.connect(self.reload_books)
         self.location.currentIndexChanged.connect(self.reload_books)
+        self.saga.currentIndexChanged.connect(self.reload_books)
         self.loaned.currentIndexChanged.connect(self.reload_books)
         self.sort.currentIndexChanged.connect(self._on_sort_changed)
 
@@ -163,12 +194,20 @@ class CatalogView(QWidget):
     def _reload_choices(self) -> None:
         current_status = self.status.currentData()
         current_location = self.location.currentData()
+        current_saga = self.saga.currentData()
         with session_scope() as db:
             statuses = status_choices(db)
             locations = location_choices(db)
+            sagas = library.list_sagas(db)
         fill_combo(self.status, statuses, none_label=_("All statuses"), current=current_status)
         fill_combo(
             self.location, locations, none_label=_("All locations"), current=current_location
+        )
+        fill_combo(
+            self.saga,
+            [(name, name) for name in sagas],
+            none_label=_("All sagas"),
+            current=current_saga,
         )
 
     def reload_books(self) -> None:
@@ -180,11 +219,20 @@ class CatalogView(QWidget):
                     search=self.search.text().strip() or None,
                     status_id=self.status.currentData(),
                     location_id=self.location.currentData(),
+                    saga=self.saga.currentData(),
                     loaned=self.loaned.currentData(),
                     sort=self.sort.currentData() or "recent",
                 )
             ]
         self._render_rows()
+
+    @staticmethod
+    def _saga_text(row: dict) -> str:
+        saga = row.get("saga")
+        if not saga:
+            return ""
+        number = row.get("saga_number")
+        return f"{saga} #{number}" if number else saga
 
     @staticmethod
     def _status_text(row: dict) -> str:
@@ -211,6 +259,9 @@ class CatalogView(QWidget):
             values = [
                 row["title"],
                 ", ".join(row.get("authors") or []) or _("Unknown author"),
+                self._saga_text(row),
+                read_status_label(row.get("read_status")),
+                score_label(row.get("score")),
                 self._status_text(row),
                 (row.get("location") or {}).get("full_path") or "",
                 str(row.get("published_year") or ""),
@@ -220,7 +271,7 @@ class CatalogView(QWidget):
                 item = QTableWidgetItem(text)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, row["id"])
-                if column == 2 and status.get("color"):
+                if column == 5 and status.get("color"):
                     item.setForeground(QColor(status["color"]))
                 self.table.setItem(row_index, column, item)
 

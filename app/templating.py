@@ -8,6 +8,13 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from . import i18n
+from .book_fields import (
+    COVER_TYPES,
+    READ_STATUSES,
+    cover_type_label,
+    read_status_label,
+    score_label,
+)
 from .config import settings
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -22,6 +29,11 @@ templates.env.globals["ngettext"] = i18n.ngettext
 templates.env.globals["status_label"] = i18n.status_label
 templates.env.globals["status_label_from"] = i18n.status_label_from
 templates.env.globals["languages"] = i18n.SUPPORTED_LANGUAGES
+templates.env.globals["cover_types"] = COVER_TYPES
+templates.env.globals["read_statuses"] = READ_STATUSES
+templates.env.globals["cover_type_label"] = cover_type_label
+templates.env.globals["read_status_label"] = read_status_label
+templates.env.globals["score_label"] = score_label
 
 
 def _inject_i18n(request):

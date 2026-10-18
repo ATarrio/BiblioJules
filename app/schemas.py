@@ -18,11 +18,15 @@ class BookIn(BaseModel):
     authors: list[str] | None = None
     publisher: str | None = None
     published_date: str | None = None
-    published_year: int | None = None
     description: str | None = None
     page_count: int | None = None
     language: str | None = None
     cover_url: str | None = None
+    cover_type: str | None = None
+    read_status: str | None = None
+    score: float | None = None
+    saga: str | None = None
+    saga_number: int | None = None
     location_id: int | None = None
     status_id: int | None = None
     notes: str | None = None

@@ -104,6 +104,62 @@
       </div>
     </div>
 
+    <!-- Cover type, read status & score -->
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Cover type') }}</label>
+        <select name="cover_type" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+          <option value="">{{ _('— Not set —') }}</option>
+          {% for slug, label in cover_types %}
+            <option value="{{ slug }}" {{ 'selected' if form.get('cover_type') == slug }}>{{ _(label) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Read status') }}</label>
+        <select name="read_status" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+          <option value="">{{ _('— Not set —') }}</option>
+          {% for slug, label in read_statuses %}
+            <option value="{{ slug }}" {{ 'selected' if form.get('read_status') == slug }}>{{ _(label) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Saga -->
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga') }}</label>
+        <input name="saga" value="{{ form.get('saga') or '' }}" placeholder="The Expanse"
+               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga number') }}</label>
+        <input name="saga_number" value="{{ form.get('saga_number') or '' }}" inputmode="numeric" placeholder="2"
+               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+      </div>
+    </div>
+
+    <!-- Score: click a half for half a star -->
+    <div>
+      <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Score') }}</label>
+      <div x-data="{ value: {{ (form.get('score') or 0)|float }} }" class="flex items-center gap-3">
+        <div class="relative select-none text-2xl leading-none">
+          <div class="whitespace-nowrap text-slate-300 dark:text-slate-600">★★★★★</div>
+          <div class="pointer-events-none absolute inset-y-0 left-0 overflow-hidden whitespace-nowrap text-amber-400"
+               :style="'width:' + (value / 5 * 100) + '%'">★★★★★</div>
+          <div class="absolute inset-0 flex">
+            <template x-for="i in 10" :key="i">
+              <button type="button" class="h-full flex-1" :title="(i / 2) + ' / 5'" @click="value = Math.max(1, i / 2)"></button>
+            </template>
+          </div>
+        </div>
+        <span class="text-sm text-slate-500 dark:text-slate-400" x-text="value ? value + ' / 5' : '—'"></span>
+        <button type="button" class="text-xs text-slate-400 hover:text-brand-600" @click="value = 0">{{ _('Clear') }}</button>
+        <input type="hidden" name="score" :value="value || ''">
+      </div>
+    </div>
+
     <!-- Details -->
     <div class="grid grid-cols-3 gap-3">
       <div>
