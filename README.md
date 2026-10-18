@@ -44,8 +44,8 @@ SQLite by default, but the database layer is fully abstracted so switching to
   page lets you search the online catalogues by title/author to add wishlist
   books you don't own yet.
 - **Filter & search.** Filter by status, location (including everything nested
-  underneath), author, publisher, and loan state; search across title, author,
-  publisher and ISBN.
+  underneath), author, publisher, read status, and loan state; search across
+  title, author, publisher and ISBN.
 - **Sortable lists.** Click a column header — in the web catalog grid or the
   desktop Catalog, Discover and Statuses tables — to sort by that column, and
   click it again to flip between ascending and descending.
@@ -251,7 +251,7 @@ scripting or a future front-end:
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `sort`) |
+| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`) |
 | `GET /api/books/{id}` | One book |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Create / update / delete |
 | `POST /api/books/{id}/lend` · `.../return` | Lend or return |

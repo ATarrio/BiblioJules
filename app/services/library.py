@@ -247,6 +247,7 @@ def query_books(
     publisher_id: int | None = None,
     loaned: str | None = None,  # "loaned" | "available" | None
     saga: str | None = None,
+    read_status: str | None = None,
     sort: str = "recent",
     descending: bool | None = None,  # None keeps each sort's natural direction
 ) -> list[Book]:
@@ -277,6 +278,10 @@ def query_books(
             stmt = stmt.where(Book.location_id.in_(location.descendant_ids()))
     if saga:
         stmt = stmt.where(func.lower(Book.saga) == saga.strip().lower())
+    if read_status:
+        value = read_status.strip()
+        if value in READ_STATUS_SLUGS:
+            stmt = stmt.where(Book.read_status == value)
 
     if loaned == "loaned":
         stmt = stmt.join(Book.loans).where(Loan.returned_at.is_(None)).distinct()

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import i18n
+from ..book_fields import READ_STATUSES
 from ..i18n import _
 from ..services import library
 from ..services.serializers import book_to_dict
@@ -64,6 +65,7 @@ class CatalogView(QWidget):
         self.status = QComboBox()
         self.location = QComboBox()
         self.saga = QComboBox()
+        self.read_status = QComboBox()
 
         self.loaned = QComboBox()
         for value, label in _LOANED:
@@ -78,16 +80,28 @@ class CatalogView(QWidget):
         refresh_btn.clicked.connect(self.refresh)
 
         filter_card = card()
-        filter_row = QHBoxLayout(filter_card)
-        filter_row.setContentsMargins(14, 12, 14, 12)
-        filter_row.setSpacing(10)
-        filter_row.addWidget(self.search, 2)
-        filter_row.addWidget(self.status, 1)
-        filter_row.addWidget(self.location, 1)
-        filter_row.addWidget(self.saga, 1)
-        filter_row.addWidget(self.loaned)
-        filter_row.addWidget(self.sort)
-        filter_row.addWidget(refresh_btn)
+        # Two rows so the filters stay readable at the default window size.
+        filter_layout = QVBoxLayout(filter_card)
+        filter_layout.setContentsMargins(14, 12, 14, 12)
+        filter_layout.setSpacing(10)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
+        top_row.addWidget(self.search, 2)
+        top_row.addWidget(self.status, 1)
+        top_row.addWidget(self.location, 1)
+        top_row.addWidget(self.saga, 1)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(10)
+        bottom_row.addWidget(self.read_status)
+        bottom_row.addWidget(self.loaned)
+        bottom_row.addWidget(self.sort)
+        bottom_row.addWidget(refresh_btn)
+        bottom_row.addStretch(1)
+
+        filter_layout.addLayout(top_row)
+        filter_layout.addLayout(bottom_row)
 
         self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
@@ -178,6 +192,7 @@ class CatalogView(QWidget):
         self.status.currentIndexChanged.connect(self.reload_books)
         self.location.currentIndexChanged.connect(self.reload_books)
         self.saga.currentIndexChanged.connect(self.reload_books)
+        self.read_status.currentIndexChanged.connect(self.reload_books)
         self.loaned.currentIndexChanged.connect(self.reload_books)
         self.sort.currentIndexChanged.connect(self._on_sort_changed)
 
@@ -195,6 +210,7 @@ class CatalogView(QWidget):
         current_status = self.status.currentData()
         current_location = self.location.currentData()
         current_saga = self.saga.currentData()
+        current_read_status = self.read_status.currentData()
         with session_scope() as db:
             statuses = status_choices(db)
             locations = location_choices(db)
@@ -209,6 +225,12 @@ class CatalogView(QWidget):
             none_label=_("All sagas"),
             current=current_saga,
         )
+        fill_combo(
+            self.read_status,
+            [(slug, read_status_label(slug)) for slug, _label in READ_STATUSES],
+            none_label=_("All read statuses"),
+            current=current_read_status,
+        )
 
     def reload_books(self) -> None:
         with session_scope() as db:
@@ -220,6 +242,7 @@ class CatalogView(QWidget):
                     status_id=self.status.currentData(),
                     location_id=self.location.currentData(),
                     saga=self.saga.currentData(),
+                    read_status=self.read_status.currentData(),
                     loaned=self.loaned.currentData(),
                     sort=self.sort.currentData() or "recent",
                 )

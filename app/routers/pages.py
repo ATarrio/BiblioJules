@@ -38,6 +38,7 @@ def parse_filters(request: Request) -> dict:
         "publisher_id": _opt_int(qp.get("publisher")),
         "loaned": qp.get("loaned") or None,
         "saga": (qp.get("saga") or "").strip() or None,
+        "read_status": (qp.get("read_status") or "").strip() or None,
         "sort": qp.get("sort") or "recent",
         "dir": direction if direction in ("asc", "desc") else None,
     }
@@ -61,6 +62,7 @@ _SORT_FILTER_PARAMS = [
     ("publisher", "publisher_id"),
     ("loaned", "loaned"),
     ("saga", "saga"),
+    ("read_status", "read_status"),
 ]
 
 

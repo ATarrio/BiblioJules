@@ -49,8 +49,8 @@ de una sola línea.
   catálogos en línea por título/autor para agregar a la lista de deseos libros
   que todavía no tienes.
 - **Filtra y busca.** Filtra por estado, ubicación (incluyendo todo lo que está
-  anidado debajo), autor, editorial y estado de préstamo; busca por título,
-  autor, editorial e ISBN.
+  anidado debajo), autor, editorial, estado de lectura y estado de préstamo;
+  busca por título, autor, editorial e ISBN.
 - **Listas ordenables.** Haz clic en el encabezado de una columna —en la grilla
   del catálogo web o en las tablas Catálogo, Descubrir y Estados de la app de
   escritorio— para ordenar por esa columna, y haz clic de nuevo para alternar
@@ -267,7 +267,7 @@ JSON para scripting o una futura interfaz:
 
 | Método y ruta | Propósito |
 | --- | --- |
-| `GET /api/books` | Lista/filtra libros (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `sort`) |
+| `GET /api/books` | Lista/filtra libros (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`) |
 | `GET /api/books/{id}` | Un libro |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Crear / actualizar / eliminar |
 | `POST /api/books/{id}/lend` · `.../return` | Prestar o devolver |

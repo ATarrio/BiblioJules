@@ -71,6 +71,13 @@
     {% endfor %}
   </select>
 
+  <select name="read_status" class="rounded-lg border border-slate-300 bg-white py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+    <option value="">{{ _('All read statuses') }}</option>
+    {% for slug, label in read_statuses %}
+      <option value="{{ slug }}" {{ 'selected' if filters.read_status == slug }}>{{ _(label) }}</option>
+    {% endfor %}
+  </select>
+
   {# Current sort, kept in sync with the grid by app.js so filter changes don't reset it. #}
   <input type="hidden" name="sort" value="{{ filters.sort }}">
   <input type="hidden" name="dir" value="{{ filters.dir or '' }}">
