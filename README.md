@@ -1,3 +1,5 @@
+**English** · [Español (Latinoamérica)](README.es-419.md)
+
 # 📚 BiblioJules
 
 A friendly, modular catalog for your **home library**. Scan books with a USB
