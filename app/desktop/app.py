@@ -1,4 +1,4 @@
-"""Desktop entry point: create the QApplication, prepare the DB, show the UI."""
+"""Desktop entry point: create the QApplication, pick a data source, show the UI."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from PySide6.QtWidgets import QApplication
 
 from .. import i18n, preferences
 from ..config import settings
-from .db import initialize_database
 from .main_window import MainWindow
+from .repo import LocalRepo, RemoteRepo, set_repo
 from .theme import apply_theme
 
 
@@ -24,8 +24,15 @@ def run(argv: list[str] | None = None) -> int:
 
     apply_theme(app)
 
-    # Same tables + seed data as the web app's startup hook.
-    initialize_database()
+    if preferences.get_mode() == preferences.MODE_REMOTE:
+        # Remote mode touches no local database at all.
+        set_repo(RemoteRepo(preferences.get_backend_url(), preferences.get_api_token()))
+    else:
+        from .db import initialize_database
+
+        # Same tables + seed data as the web app's startup hook.
+        initialize_database()
+        set_repo(LocalRepo())
 
     window = MainWindow()
     window.show()

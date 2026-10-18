@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,8 @@ from .catalog import CatalogView
 from .dashboard import DashboardView
 from .discover import DiscoverView
 from .locations_view import LocationsView
+from .repo import AuthError, LocalRepo, RemoteRepo, RepoError, current_repo, set_repo
+from .settings_dialog import SettingsDialog
 from .statuses_view import StatusesView
 
 # (emoji, English source label) — order mirrors the web app's sidebar.
@@ -42,8 +45,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(settings.app_name)
         self.resize(1240, 800)
+        # Defer the first refresh so the sign-in prompt (if any) can appear
+        # before any view asks the data source for rows.
+        self._ready = False
+        self._settings_open = False
         self._build_menu()
         self._build_ui()
+        QTimer.singleShot(0, self._startup_check)
 
     # -- construction ------------------------------------------------------- #
     def _build_ui(self) -> None:
@@ -70,6 +78,18 @@ class MainWindow(QMainWindow):
         for emoji, source in _PAGES:
             self.nav.addItem(QListWidgetItem(f"{emoji}   {_(source)}"))
 
+        # Which catalogue are we using? Clicking opens the settings dialog.
+        self.connection_btn = QPushButton(self._connection_label())
+        self.connection_btn.setObjectName("ConnectionButton")
+        self.connection_btn.setFlat(True)
+        self.connection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.connection_btn.setToolTip(_("Choose which library to use, and sign in."))
+        self.connection_btn.clicked.connect(self._open_settings)
+        connection_row = QWidget()
+        connection_layout = QHBoxLayout(connection_row)
+        connection_layout.setContentsMargins(14, 6, 14, 0)
+        connection_layout.addWidget(self.connection_btn)
+
         # Language selector, pinned to the bottom of the sidebar.
         self.language = QComboBox()
         for code, name in i18n.SUPPORTED_LANGUAGES.items():
@@ -88,6 +108,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(0)
         sidebar_layout.addWidget(brand)
         sidebar_layout.addWidget(self.nav, 1)
+        sidebar_layout.addWidget(connection_row)
         sidebar_layout.addWidget(language_row)
 
         # --- views ------------------------------------------------------- #
@@ -111,16 +132,96 @@ class MainWindow(QMainWindow):
 
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)
-        self.refresh_all()
 
     def _rebuild(self) -> None:
-        """Recreate the whole UI after a language change."""
+        """Recreate the whole UI after a language or connection change."""
         current = self.stack.currentIndex() if hasattr(self, "stack") else 0
+        self._ready = False
         self.menuBar().clear()
         self._build_menu()
         self._build_ui()
         if current > 0:
             self.nav.setCurrentRow(current)
+        self._ready = True
+        self.refresh_all()
+
+    # -- connection --------------------------------------------------------- #
+    def _connection_label(self) -> str:
+        repo = current_repo()
+        if isinstance(repo, RemoteRepo):
+            if repo.token and not repo.token_rejected:
+                account = preferences.get_account_name()
+                return f"🌐  {account or repo.description}"
+            return "🌐  " + _("Not signed in")
+        return "💾  " + _("Local database")
+
+    def _refresh_connection_label(self) -> None:
+        if hasattr(self, "connection_btn"):
+            self.connection_btn.setText(self._connection_label())
+
+    def _open_settings(self) -> None:
+        # Guarded: a failing refresh triggered from inside the dialog must not
+        # stack a second copy of it on top.
+        if self._settings_open:
+            return
+        self._settings_open = True
+        try:
+            dialog = SettingsDialog(self)
+            if dialog.exec() != SettingsDialog.DialogCode.Accepted:
+                return
+            self._apply_settings(dialog.result_data())
+        finally:
+            self._settings_open = False
+
+    def _apply_settings(self, data: dict) -> None:
+        preferences.set_mode(data.get("mode") or preferences.MODE_LOCAL)
+        preferences.set_remote_session(
+            backend_url=data.get("backend_url") or "",
+            token=data.get("token") or "",
+            account=data.get("account") or "",
+        )
+        self._install_repo()
+        self._rebuild()
+        if preferences.get_mode() == preferences.MODE_REMOTE and not preferences.get_api_token():
+            # Still no token: put the user back in the dialog rather than leave
+            # them staring at empty views.
+            QTimer.singleShot(0, self._open_settings)
+
+    def _install_repo(self) -> None:
+        previous = current_repo()
+        if isinstance(previous, RemoteRepo):
+            previous.close()
+        if preferences.get_mode() == preferences.MODE_REMOTE:
+            set_repo(RemoteRepo(preferences.get_backend_url(), preferences.get_api_token()))
+        else:
+            # Imported lazily so remote mode never opens the local SQLite file.
+            from .db import initialize_database
+
+            initialize_database()
+            set_repo(LocalRepo())
+
+    def _startup_check(self) -> None:
+        repo = current_repo()
+        if preferences.get_mode() == preferences.MODE_REMOTE and isinstance(repo, RemoteRepo):
+            needs_sign_in = False
+            if not repo.token:
+                needs_sign_in = True
+            else:
+                try:
+                    repo.verify()
+                except AuthError:
+                    needs_sign_in = True
+                except RepoError as exc:
+                    self.statusBar().showMessage(str(exc), 8000)
+            if needs_sign_in:
+                self._ready = True
+                self._open_settings()
+                # Signed in? Then show the catalogue. Cancelled? Leave the views
+                # empty — the sidebar and status bar explain why.
+                self.refresh_all()
+                return
+        self._ready = True
+        self.refresh_all()
 
     # -- language ----------------------------------------------------------- #
     def _on_language_changed(self, index: int) -> None:
@@ -138,7 +239,8 @@ class MainWindow(QMainWindow):
         if row < 0:
             return
         self.stack.setCurrentIndex(row)
-        self._views[row].refresh()
+        if self._ready:
+            self._safe_refresh(self._views[row])
 
     def notify_change(self) -> None:
         """Called by views after they mutate data.
@@ -153,11 +255,31 @@ class MainWindow(QMainWindow):
         for row, view in enumerate(self._views):
             # Reload the visible view immediately; the rest lazily on navigation.
             if row == current:
-                view.refresh()
+                self._safe_refresh(view)
+
+    def _safe_refresh(self, view) -> None:
+        """Refresh a view, turning data-source failures into a message.
+
+        We deliberately do *not* pop the settings dialog here: a signed-out
+        session would otherwise greet the user with one dialog per view. The
+        status bar says what to do, and the sidebar button is one click away.
+        """
+        try:
+            view.refresh()
+        except AuthError as exc:
+            self.statusBar().showMessage(str(exc), 15000)
+            self._refresh_connection_label()
+        except RepoError as exc:
+            self.statusBar().showMessage(str(exc), 8000)
 
     # -- menu --------------------------------------------------------------- #
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu(_("&File"))
+        settings_action = QAction(_("&Settings…"), self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(self._open_settings)
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
         quit_action = QAction(_("&Quit"), self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
@@ -169,12 +291,23 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
 
     def _about(self) -> None:
+        if preferences.get_mode() == preferences.MODE_REMOTE:
+            where = _(
+                "Connected to the hosted library at <b>%s</b>."
+                % (preferences.get_backend_url() or _("(no URL set)"))
+            )
+        else:
+            where = _("Using the SQLite database on this computer, shared with the web app.")
         QMessageBox.about(
             self,
             _("About %(app)s") % {"app": settings.app_name},
             _(
                 "<b>%(app)s</b><br>%(description)s<br><br>"
-                "Desktop edition — shares its SQLite database with the web app."
+                "Desktop edition.<br>%(where)s"
             )
-            % {"app": settings.app_name, "description": _("A catalog for your home library.")},
+            % {
+                "app": settings.app_name,
+                "description": _("A catalog for your home library."),
+                "where": where,
+            },
         )

@@ -20,30 +20,59 @@ from PySide6.QtWidgets import (
 
 from .. import i18n
 from ..book_fields import cover_type_label, read_status_label, score_label
-from ..services import library
-from ..models import Status
 from .theme import rgba
 
 
-def location_choices(db) -> list[tuple[int, str]]:
-    """``[(location_id, "  indented name"), ...]`` in tree order."""
+def location_choices(locations: Iterable[dict]) -> list[tuple[int, str]]:
+    """``[(location_id, "  indented name"), ...]`` in tree order.
+
+    Takes the flat list from a repo (already in tree order) and derives each
+    row's indentation from its ``parent_id`` chain.
+    """
+    items = list(locations)
+    parents = {item.get("id"): item.get("parent_id") for item in items}
     choices: list[tuple[int, str]] = []
-    for location, depth in library.flatten_locations(db):
-        label = "    " * depth + location.name
-        if location.kind:
-            label += f"  ({location.kind})"
-        choices.append((location.id, label))
+    for item in items:
+        label = "    " * _tree_depth(item.get("id"), parents) + (item.get("name") or "")
+        if item.get("kind"):
+            label += f"  ({item['kind']})"
+        choices.append((item.get("id"), label))
     return choices
 
 
-def status_choices(db) -> list[tuple[int, str]]:
-    """``[(status_id, "icon name"), ...]`` ordered by the service."""
+def _tree_depth(node_id: Any, parents: dict) -> int:
+    """How many ancestors ``node_id`` has (cycle-safe)."""
+    depth = 0
+    seen: set = set()
+    current = parents.get(node_id)
+    while current is not None and current not in seen:
+        seen.add(current)
+        depth += 1
+        current = parents.get(current)
+    return depth
+
+
+def status_choices(statuses: Iterable[dict]) -> list[tuple[int, str]]:
+    """``[(status_id, "icon name"), ...]`` in the order the repo returned."""
     choices: list[tuple[int, str]] = []
-    for status in library.list_statuses(db):
-        name = i18n.status_label(status)
-        label = f"{status.icon} {name}".strip() if status.icon else name
-        choices.append((status.id, label))
+    for status in statuses:
+        name = i18n.status_label_from(status.get("slug"), status.get("name"))
+        icon = status.get("icon")
+        label = f"{icon} {name}".strip() if icon else name
+        choices.append((status.get("id"), label))
     return choices
+
+
+def default_status_id(statuses: Iterable[dict]) -> int | None:
+    """The id of the status a new book should get, mirroring the service layer."""
+    items = list(statuses)
+    for status in items:
+        if status.get("is_default"):
+            return status.get("id")
+    for status in items:
+        if status.get("slug") == "available":
+            return status.get("id")
+    return items[0].get("id") if items else None
 
 
 def fill_combo(
@@ -67,17 +96,34 @@ def fill_combo(
     combo.blockSignals(False)
 
 
-def format_date(value: date | datetime | None) -> str:
+def format_date(value: date | datetime | str | None) -> str:
+    """Format a date, accepting the ISO strings the repo layer returns."""
     if value is None:
         return ""
+    if isinstance(value, str):
+        parsed = _parse_iso_date(value)
+        if parsed is None:
+            return ""
+        value = parsed
     return i18n.format_date(value)
 
 
-def display_status(status: Status | None) -> str:
-    if status is None:
+def _parse_iso_date(value: str) -> date | None:
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def display_status(status: dict | None) -> str:
+    if not status:
         return ""
-    name = i18n.status_label(status)
-    return f"{status.icon} {name}".strip() if status.icon else name
+    name = i18n.status_label_from(status.get("slug"), status.get("name"))
+    icon = status.get("icon")
+    return f"{icon} {name}".strip() if icon else name
 
 
 # --------------------------------------------------------------------------- #

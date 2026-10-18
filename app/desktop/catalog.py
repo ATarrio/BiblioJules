@@ -24,9 +24,7 @@ from PySide6.QtWidgets import (
 from .. import i18n
 from ..book_fields import READ_STATUSES
 from ..i18n import _
-from ..services import library
-from ..services.serializers import book_to_dict
-from .db import session_scope
+from .repo import get_repo
 from .util import (
     ColumnSort,
     card,
@@ -211,13 +209,13 @@ class CatalogView(QWidget):
         current_location = self.location.currentData()
         current_saga = self.saga.currentData()
         current_read_status = self.read_status.currentData()
-        with session_scope() as db:
-            statuses = status_choices(db)
-            locations = location_choices(db)
-            sagas = library.list_sagas(db)
-        fill_combo(self.status, statuses, none_label=_("All statuses"), current=current_status)
+        repo = get_repo()
+        statuses = repo.list_statuses()
+        locations = repo.list_locations()
+        sagas = repo.sagas()
+        fill_combo(self.status, status_choices(statuses), none_label=_("All statuses"), current=current_status)
         fill_combo(
-            self.location, locations, none_label=_("All locations"), current=current_location
+            self.location, location_choices(locations), none_label=_("All locations"), current=current_location
         )
         fill_combo(
             self.saga,
@@ -233,20 +231,15 @@ class CatalogView(QWidget):
         )
 
     def reload_books(self) -> None:
-        with session_scope() as db:
-            self._rows = [
-                book_to_dict(book)
-                for book in library.query_books(
-                    db,
-                    search=self.search.text().strip() or None,
-                    status_id=self.status.currentData(),
-                    location_id=self.location.currentData(),
-                    saga=self.saga.currentData(),
-                    read_status=self.read_status.currentData(),
-                    loaned=self.loaned.currentData(),
-                    sort=self.sort.currentData() or "recent",
-                )
-            ]
+        self._rows = get_repo().list_books(
+            search=self.search.text().strip() or None,
+            status_id=self.status.currentData(),
+            location_id=self.location.currentData(),
+            saga=self.saga.currentData(),
+            read_status=self.read_status.currentData(),
+            loaned=self.loaned.currentData(),
+            sort=self.sort.currentData() or "recent",
+        )
         self._render_rows()
 
     @staticmethod
@@ -313,13 +306,24 @@ class CatalogView(QWidget):
         return book_id
 
     # -- actions ------------------------------------------------------------ #
+    def _fetch(self, book_id: int) -> dict | None:
+        """Load one book for an action, reporting any problem to the user."""
+        try:
+            book = get_repo().get_book(book_id)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("Could not load"), str(exc))
+            return None
+        if book is None:
+            QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
+            return None
+        return book
+
     def _add(self) -> None:
         dialog = BookDialog(self, on_bulk_save=self._bulk_create)
         if dialog.exec() != BookDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                library.create_book(db, dialog.data())
+            get_repo().create_book(dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -328,8 +332,7 @@ class CatalogView(QWidget):
     def _bulk_create(self, payload: dict) -> str | None:
         """Persist one book from a keep-open add. Returns an error message or None."""
         try:
-            with session_scope() as db:
-                library.create_book(db, payload)
+            get_repo().create_book(payload)
         except Exception as exc:  # noqa: BLE001
             return str(exc)
         self.on_change()
@@ -343,11 +346,7 @@ class CatalogView(QWidget):
         if dialog.exec() != BookDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                book = library.get_book(db, book_id)
-                if book is None:
-                    raise ValueError(_("This book no longer exists."))
-                library.update_book(db, book, dialog.data())
+            get_repo().update_book(book_id, dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -363,26 +362,20 @@ class CatalogView(QWidget):
         book_id = self._require_selection()
         if book_id is None:
             return
-        with session_scope() as db:
-            book = library.get_book(db, book_id)
-            if book is None:
-                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
-                return
-            title = book.title
-            if book.active_loan is not None:
-                QMessageBox.information(
-                    self, _("Already on loan"), _("This book is already lent out.")
-                )
-                return
+        book = self._fetch(book_id)
+        if book is None:
+            return
+        if book.get("active_loan") is not None:
+            QMessageBox.information(
+                self, _("Already on loan"), _("This book is already lent out.")
+            )
+            return
 
-        dialog = LendDialog(self, book_title=title)
+        dialog = LendDialog(self, book_title=book.get("title") or "")
         if dialog.exec() != LendDialog.DialogCode.Accepted:
             return
-        payload = dialog.data()
         try:
-            with session_scope() as db:
-                book = library.get_book(db, book_id)
-                library.lend_book(db, book, **payload)
+            get_repo().lend_book(book_id, dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not lend"), str(exc))
             return
@@ -392,25 +385,26 @@ class CatalogView(QWidget):
         book_id = self._require_selection()
         if book_id is None:
             return
-        with session_scope() as db:
-            book = library.get_book(db, book_id)
-            if book is None or book.active_loan is None:
-                QMessageBox.information(
-                    self, _("Not on loan"), _("This book is not currently lent out.")
-                )
-                return
-            borrower = book.active_loan.borrower_name
+        book = self._fetch(book_id)
+        if book is None:
+            return
+        loan = book.get("active_loan")
+        if not loan:
+            QMessageBox.information(
+                self, _("Not on loan"), _("This book is not currently lent out.")
+            )
+            return
         if (
             QMessageBox.question(
-                self, _("Return book"), _("Mark the book as returned by %s?") % borrower
+                self,
+                _("Return book"),
+                _("Mark the book as returned by %s?") % (loan.get("borrower_name") or ""),
             )
             != QMessageBox.StandardButton.Yes
         ):
             return
         try:
-            with session_scope() as db:
-                book = library.get_book(db, book_id)
-                library.return_loan(db, book)
+            get_repo().return_book(book_id)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not return"), str(exc))
             return
@@ -420,23 +414,21 @@ class CatalogView(QWidget):
         book_id = self._require_selection()
         if book_id is None:
             return
-        with session_scope() as db:
-            book = library.get_book(db, book_id)
-            title = book.title if book else _("this book")
+        book = self._fetch(book_id)
+        if book is None:
+            return
         if (
             QMessageBox.question(
                 self,
                 _("Delete book"),
-                _("Permanently delete “%s” and its loan history?") % title,
+                _("Permanently delete “%s” and its loan history?")
+                % (book.get("title") or _("this book")),
             )
             != QMessageBox.StandardButton.Yes
         ):
             return
         try:
-            with session_scope() as db:
-                book = library.get_book(db, book_id)
-                if book is not None:
-                    library.delete_book(db, book)
+            get_repo().delete_book(book_id)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not delete"), str(exc))
             return

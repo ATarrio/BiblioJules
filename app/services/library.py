@@ -393,11 +393,16 @@ def get_status_by_slug(db: Session, slug: str) -> Status | None:
 
 def create_status(db: Session, *, name: str, color: str, icon=None, description=None,
                   slug=None, sort_order=None) -> Status:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError(_("A status name is required."))
+    if _status_name_exists(db, name):
+        raise ValueError(_("A status named “%s” already exists.") % name)
     if sort_order is None:
         sort_order = (db.scalar(select(func.max(Status.sort_order))) or 0) + 10
     status = Status(
-        name=name.strip(),
-        slug=slug or slugify(name),
+        name=name,
+        slug=_unique_status_slug(db, slug or slugify(name)),
         color=color or "#64748b",
         icon=icon or None,
         description=(description or "").strip() or None,
@@ -407,6 +412,27 @@ def create_status(db: Session, *, name: str, color: str, icon=None, description=
     db.commit()
     db.refresh(status)
     return status
+
+
+def _status_name_exists(db: Session, name: str, exclude_id: int | None = None) -> bool:
+    stmt = select(Status).where(func.lower(Status.name) == name.lower())
+    if exclude_id is not None:
+        stmt = stmt.where(Status.id != exclude_id)
+    return db.scalar(stmt) is not None
+
+
+def _unique_status_slug(db: Session, base: str, exclude_id: int | None = None) -> str:
+    """Return ``base``, or ``base-2``/``base-3``… if that slug is taken."""
+    base = base or "status"
+    candidate, counter = base, 1
+    while True:
+        stmt = select(Status).where(Status.slug == candidate)
+        if exclude_id is not None:
+            stmt = stmt.where(Status.id != exclude_id)
+        if db.scalar(stmt) is None:
+            return candidate
+        counter += 1
+        candidate = f"{base}-{counter}"
 
 
 def delete_status(db: Session, status: Status) -> None:
@@ -422,9 +448,14 @@ def delete_status(db: Session, status: Status) -> None:
 def update_status(db: Session, status: Status, *, name=None, color=None, icon=None,
                   description=None) -> Status:
     if name is not None and name.strip():
-        status.name = name.strip()
+        new_name = name.strip()
+        if new_name.lower() != status.name.lower() and _status_name_exists(
+            db, new_name, exclude_id=status.id
+        ):
+            raise ValueError(_("A status named “%s” already exists.") % new_name)
+        status.name = new_name
         if not status.is_system:
-            status.slug = slugify(status.name)
+            status.slug = _unique_status_slug(db, slugify(status.name), exclude_id=status.id)
     if color is not None and color.strip():
         status.color = color.strip()
     if icon is not None:

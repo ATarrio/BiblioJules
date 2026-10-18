@@ -53,6 +53,15 @@ document.addEventListener('alpine:init', () => {
   });
 });
 
+// Attach the CSRF token to every HTMX request; the server checks it on any
+// state-changing call. The value is rendered into a <meta> tag by base.html.
+document.addEventListener('htmx:configRequest', (event) => {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta && meta.content) {
+    event.detail.headers['X-CSRF-Token'] = meta.content;
+  }
+});
+
 // Open the modal whenever new content is swapped into #modal-body, and keep the
 // catalog's hidden sort fields in sync when the results grid is swapped.
 document.addEventListener('htmx:afterSwap', (event) => {

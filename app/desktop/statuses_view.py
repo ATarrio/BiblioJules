@@ -20,8 +20,7 @@ from PySide6.QtWidgets import (
 
 from .. import i18n
 from ..i18n import _
-from ..services import library
-from .db import session_scope
+from .repo import get_repo
 from .dialogs import StatusDialog
 from .util import ColumnSort, page_header
 
@@ -95,19 +94,17 @@ class StatusesView(QWidget):
 
     # -- data --------------------------------------------------------------- #
     def refresh(self) -> None:
-        with session_scope() as db:
-            statuses = library.list_statuses(db)
-            self._rows = [
-                {
-                    "id": status.id,
-                    "name": i18n.status_label(status),
-                    "icon": status.icon or "",
-                    "kind": _("built-in") if status.is_system else _("custom"),
-                    "color": status.color or "#64748b",
-                    "description": status.description or "",
-                }
-                for status in statuses
-            ]
+        self._rows = [
+            {
+                "id": status.get("id"),
+                "name": i18n.status_label_from(status.get("slug"), status.get("name")),
+                "icon": status.get("icon") or "",
+                "kind": _("built-in") if status.get("is_system") else _("custom"),
+                "color": status.get("color") or "#64748b",
+                "description": status.get("description") or "",
+            }
+            for status in get_repo().list_statuses()
+        ]
         self._render_rows()
 
     def _render_rows(self) -> None:
@@ -156,8 +153,7 @@ class StatusesView(QWidget):
         if dialog.exec() != StatusDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                library.create_status(db, **dialog.data())
+            get_repo().create_status(dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -171,13 +167,7 @@ class StatusesView(QWidget):
         if dialog.exec() != StatusDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                from ..models import Status
-
-                status = db.get(Status, status_id)
-                if status is None:
-                    raise ValueError(_("This status no longer exists."))
-                library.update_status(db, status, **dialog.data())
+            get_repo().update_status(status_id, dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -188,22 +178,24 @@ class StatusesView(QWidget):
         if status_id is None:
             return
         try:
-            with session_scope() as db:
-                from ..models import Status
-
-                status = db.get(Status, status_id)
-                if status is None:
-                    raise ValueError(_("This status no longer exists."))
-                if (
-                    QMessageBox.question(
-                        self,
-                        _("Delete status"),
-                        _("Delete the “%s” status?") % status.name,
-                    )
-                    != QMessageBox.StandardButton.Yes
-                ):
-                    return
-                library.delete_status(db, status)
+            status = get_repo().get_status(status_id)
+            if status is None:
+                raise ValueError(_("This status no longer exists."))
+            if status.get("is_system"):
+                QMessageBox.warning(
+                    self, _("Cannot delete"), _("System statuses cannot be deleted.")
+                )
+                return
+            if (
+                QMessageBox.question(
+                    self,
+                    _("Delete status"),
+                    _("Delete the “%s” status?") % (status.get("name") or ""),
+                )
+                != QMessageBox.StandardButton.Yes
+            ):
+                return
+            get_repo().delete_status(status_id)
         except ValueError as exc:
             QMessageBox.warning(self, _("Cannot delete"), str(exc))
             return

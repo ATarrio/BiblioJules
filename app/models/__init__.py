@@ -13,6 +13,8 @@ from .loan import Loan
 from .location import Location
 from .publisher import Publisher
 from .status import Status
+from .token import Token
+from .user import User
 
 __all__ = [
     "Author",
@@ -21,5 +23,7 @@ __all__ = [
     "Location",
     "Publisher",
     "Status",
+    "Token",
+    "User",
     "book_authors",
 ]

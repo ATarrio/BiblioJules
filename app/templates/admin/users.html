@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Users') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{{ _('Users') }}</h1>
+  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Who can sign in to this library. Everyone shares the same catalogue.') }}</p>
+</div>
+
+{% if error %}
+  <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+    {{ error }}
+  </div>
+{% endif %}
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-[360px,1fr]">
+  <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-6 lg:self-start">
+    <h2 class="mb-3 text-base font-semibold text-slate-900 dark:text-white">{{ _('Add a user') }}</h2>
+    <form hx-post="/admin/users" hx-target="body" class="space-y-3">
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Username') }} *</label>
+        <input name="username" required autocomplete="off"
+               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Display name') }}</label>
+        <input name="display_name" autocomplete="off"
+               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Password') }} *</label>
+        <input name="password" type="password" required autocomplete="new-password"
+               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Role') }}</label>
+        <select name="role" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+          <option value="member">{{ _('Member') }}</option>
+          <option value="admin">{{ _('Administrator') }}</option>
+        </select>
+      </div>
+      <button class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">{{ _('Add user') }}</button>
+    </form>
+  </div>
+
+  <div class="space-y-2">
+    {% for u in users %}
+      <div x-data="{ open: false }" class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex items-center gap-3 p-3">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{{ u.label[:1]|upper }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-medium text-slate-800 dark:text-slate-100">{{ u.label }}</span>
+              {% if u.username != u.label %}<span class="text-xs text-slate-400">@{{ u.username }}</span>{% endif %}
+              {% if u.role == 'admin' %}
+                <span class="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{{ _('Administrator') }}</span>
+              {% else %}
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ _('Member') }}</span>
+              {% endif %}
+              {% if not u.is_active %}<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-500/15 dark:text-red-300">{{ _('Disabled') }}</span>{% endif %}
+              {% if u.id == me.id %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{{ _('you') }}</span>{% endif %}
+            </div>
+            <p class="truncate text-xs text-slate-400">
+              {% if u.last_login_at %}{{ _('Last sign-in') }}: {{ u.last_login_at|date }}{% else %}{{ _('Never signed in') }}{% endif %}
+            </p>
+          </div>
+          <button @click="open = !open" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800" title="{{ _('Edit') }}">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          {% if u.id != me.id %}
+            <button hx-post="/admin/users/{{ u.id }}/delete" hx-confirm="{{ _('Delete the account “%s”?') % u.label }}"
+                    class="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10" title="{{ _('Delete') }}">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          {% endif %}
+        </div>
+        <div x-show="open" x-cloak class="border-t border-slate-100 p-3 dark:border-slate-800">
+          <form hx-post="/admin/users/{{ u.id }}" hx-target="body" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input name="display_name" value="{{ u.display_name or '' }}" placeholder="{{ _('Display name') }}" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            <select name="role" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+              <option value="member" {{ 'selected' if u.role == 'member' }}>{{ _('Member') }}</option>
+              <option value="admin" {{ 'selected' if u.role == 'admin' }}>{{ _('Administrator') }}</option>
+            </select>
+            <input name="password" type="password" autocomplete="new-password" placeholder="{{ _('New password (leave blank to keep)') }}"
+                   class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:col-span-2">
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <input type="checkbox" name="is_active" {{ 'checked' if u.is_active }} class="rounded border-slate-300 dark:border-slate-600"> {{ _('Active') }}
+            </label>
+            <div class="flex justify-end gap-2 sm:col-span-2">
+              <button type="button" @click="open = false" class="rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">{{ _('Cancel') }}</button>
+              <button class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">{{ _('Save') }}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

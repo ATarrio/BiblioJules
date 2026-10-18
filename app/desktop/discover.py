@@ -21,9 +21,8 @@ from PySide6.QtWidgets import (
 
 from .. import i18n
 from ..i18n import _
-from ..services import library
 from ..services.isbn_lookup import search_books
-from .db import session_scope
+from .repo import get_repo
 from .util import ColumnSort, card, page_header
 from .workers import run_async
 
@@ -165,38 +164,43 @@ class DiscoverView(QWidget):
         if not result:
             return
 
-        with session_scope() as db:
-            existing = library.find_by_isbn(db, result.get("isbn") or "")
-            if existing is not None:
-                QMessageBox.information(
-                    self,
-                    _("Already in catalog"),
-                    _("“%s” is already in your library.") % existing.title,
-                )
-                return
-            wishlist = library.get_status_by_slug(db, "wishlist")
-            status_id = wishlist.id if wishlist else None
-            data = {
-                "isbn": result.get("isbn") or "",
-                "title": result.get("title") or "",
-                "subtitle": result.get("subtitle") or "",
-                "authors": result.get("authors") or [],
-                "publisher": result.get("publisher") or "",
-                "published_date": result.get("published_date") or "",
-                "published_year": result.get("published_year"),
-                "page_count": result.get("page_count"),
-                "language": result.get("language") or "",
-                "cover_url": result.get("cover_url") or "",
-                "description": result.get("description") or "",
-                "source": result.get("source") or "manual",
-            }
-            if status_id is not None:
-                data["status_id"] = status_id
-            try:
-                library.create_book(db, data)
-            except Exception as exc:  # noqa: BLE001
-                QMessageBox.critical(self, _("Could not add"), str(exc))
-                return
+        repo = get_repo()
+        try:
+            existing = repo.find_by_isbn(result.get("isbn") or "")
+            wishlist = repo.status_by_slug("wishlist")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("Could not add"), str(exc))
+            return
+
+        if existing is not None:
+            QMessageBox.information(
+                self,
+                _("Already in catalog"),
+                _("“%s” is already in your library.") % (existing.get("title") or ""),
+            )
+            return
+
+        data = {
+            "isbn": result.get("isbn") or "",
+            "title": result.get("title") or "",
+            "subtitle": result.get("subtitle") or "",
+            "authors": result.get("authors") or [],
+            "publisher": result.get("publisher") or "",
+            "published_date": result.get("published_date") or "",
+            "published_year": result.get("published_year"),
+            "page_count": result.get("page_count"),
+            "language": result.get("language") or "",
+            "cover_url": result.get("cover_url") or "",
+            "description": result.get("description") or "",
+            "source": result.get("source") or "manual",
+        }
+        if wishlist is not None:
+            data["status_id"] = wishlist.get("id")
+        try:
+            repo.create_book(data)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("Could not add"), str(exc))
+            return
 
         self.message.setText(_("Added to your wishlist."))
         self.on_change()

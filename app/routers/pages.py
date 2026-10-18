@@ -5,19 +5,15 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from .. import i18n
 from ..database import get_db
 from ..i18n import _
 from ..services import library
 from ..templating import templates
 
 router = APIRouter()
-
-# How long a language choice sticks (a year).
-_LANGUAGE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 
 
 def _opt_int(value):
@@ -45,8 +41,9 @@ def parse_filters(request: Request) -> dict:
 
 
 # Columns the catalog can be ordered by, with the direction used on first
-# click (Year naturally reads newest-first).
-_SORT_FIELDS = [
+# click (Year naturally reads newest-first). Shared with the JSON API's
+# ``/api/meta`` so clients discover sort options from one place.
+SORT_FIELDS = [
     ("title", "Title", False),
     ("author", "Author", False),
     ("saga", "Saga", False),
@@ -86,7 +83,7 @@ def _sort_links(filters: dict) -> list[dict]:
             "arrow": "",
         }
     ]
-    for key, label, default_desc in _SORT_FIELDS:
+    for key, label, default_desc in SORT_FIELDS:
         active = filters.get("sort") == key
         current = filters.get("dir") or ("desc" if default_desc else "asc")
         if active:
@@ -124,21 +121,6 @@ def catalog_context(db: Session, filters: dict) -> dict:
         "sagas": library.list_sagas(db),
         "book_count": len(books),
     }
-
-
-@router.get("/language")
-def switch_language(request: Request):
-    """Remember the chosen language in a cookie and go back where we came from."""
-    code = i18n.normalize_language(request.query_params.get("lang"))
-    target = request.query_params.get("next") or request.headers.get("referer") or "/"
-    # Only ever redirect back into this site (no open redirects).
-    if not target.startswith("/") or target.startswith("//"):
-        target = "/"
-    response = RedirectResponse(target, status_code=303)
-    response.set_cookie(
-        "lang", code, max_age=_LANGUAGE_COOKIE_MAX_AGE, samesite="lax", path="/"
-    )
-    return response
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -214,7 +196,11 @@ def statuses_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         request,
         "statuses/list.html",
-        {"statuses": library.list_statuses(db), "counts": dict(library.status_counts(db))},
+        {
+            "statuses": library.list_statuses(db),
+            "counts": dict(library.status_counts(db)),
+            "error": request.query_params.get("error"),
+        },
     )
 
 

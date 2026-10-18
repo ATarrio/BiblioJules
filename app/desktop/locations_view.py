@@ -18,8 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import _
-from ..services import library
-from .db import session_scope
+from .repo import get_repo
 from .dialogs import LocationDialog
 from .util import page_header
 
@@ -77,12 +76,16 @@ class LocationsView(QWidget):
 
     # -- data --------------------------------------------------------------- #
     def refresh(self) -> None:
-        with session_scope() as db:
-            flat = library.flatten_locations(db)
-            rows = [
-                (loc.id, loc.parent_id, loc.name, loc.kind or "", loc.description or "")
-                for loc, _depth in flat
-            ]
+        rows = [
+            (
+                loc.get("id"),
+                loc.get("parent_id"),
+                loc.get("name") or "",
+                loc.get("kind") or "",
+                loc.get("description") or "",
+            )
+            for loc in get_repo().list_locations()
+        ]
 
         self.tree.clear()
         items: dict[int, QTreeWidgetItem] = {}
@@ -107,8 +110,7 @@ class LocationsView(QWidget):
         if dialog.exec() != LocationDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                library.create_location(db, **dialog.data())
+            get_repo().create_location(dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -125,8 +127,7 @@ class LocationsView(QWidget):
         if dialog.exec() != LocationDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                library.create_location(db, **dialog.data())
+            get_repo().create_location(dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -141,13 +142,7 @@ class LocationsView(QWidget):
         if dialog.exec() != LocationDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                from ..models import Location
-
-                location = db.get(Location, location_id)
-                if location is None:
-                    raise ValueError(_("This location no longer exists."))
-                library.update_location(db, location, **dialog.data())
+            get_repo().update_location(location_id, dialog.data())
         except ValueError as exc:
             QMessageBox.warning(self, _("Could not move"), str(exc))
             return
@@ -161,11 +156,12 @@ class LocationsView(QWidget):
         if location_id is None:
             QMessageBox.information(self, _("No selection"), _("Select a location first."))
             return
-        with session_scope() as db:
-            from ..models import Location
-
-            location = db.get(Location, location_id)
-            name = location.name if location else _("this location")
+        try:
+            location = get_repo().get_location(location_id)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("Could not load"), str(exc))
+            return
+        name = (location or {}).get("name") or _("this location")
         if (
             QMessageBox.question(
                 self,
@@ -177,12 +173,7 @@ class LocationsView(QWidget):
         ):
             return
         try:
-            with session_scope() as db:
-                from ..models import Location
-
-                location = db.get(Location, location_id)
-                if location is not None:
-                    library.delete_location(db, location)
+            get_repo().delete_location(location_id)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not delete"), str(exc))
             return

@@ -31,13 +31,13 @@ from PySide6.QtWidgets import (
 
 from ..book_fields import COVER_TYPES, READ_STATUSES
 from ..i18n import _
-from ..services import library
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from .cover import CoverImage
-from .db import session_scope
+from .repo import get_repo
 from .switch import Switch
 from .util import (
     cover_type_label,
+    default_status_id,
     display_status,
     fill_combo,
     format_date,
@@ -193,54 +193,55 @@ class BookDialog(QDialog):
         layout.addWidget(buttons)
 
     def _load_choices(self) -> None:
-        with session_scope() as db:
-            locations = location_choices(db)
-            statuses = status_choices(db)
-            default = library.get_default_status(db)
-        fill_combo(self.location, locations, none_label=_("— none —"))
-        fill_combo(self.status, statuses, none_label=_("— default —"))
-        if self.book_id is None and default is not None:
-            index = self.status.findData(default.id)
-            if index >= 0:
-                self.status.setCurrentIndex(index)
+        repo = get_repo()
+        locations = repo.list_locations()
+        statuses = repo.list_statuses()
+        fill_combo(self.location, location_choices(locations), none_label=_("— none —"))
+        fill_combo(self.status, status_choices(statuses), none_label=_("— default —"))
+        if self.book_id is None:
+            default_id = default_status_id(statuses)
+            if default_id is not None:
+                index = self.status.findData(default_id)
+                if index >= 0:
+                    self.status.setCurrentIndex(index)
 
     # -- loading ------------------------------------------------------------ #
     def _load_book(self) -> None:
-        with session_scope() as db:
-            book = library.get_book(db, self.book_id)
-            if book is None:
-                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
-                self.reject()
-                return
-            self.isbn.setText(book.isbn or "")
-            self.title.setText(book.title or "")
-            self.subtitle.setText(book.subtitle or "")
-            self.authors.setText(", ".join(book.author_names))
-            self.publisher.setText(book.publisher.name if book.publisher else "")
-            self.published_date.setText(
-                book.published_date or (str(book.published_year) if book.published_year else "")
-            )
-            self.pages.setValue(book.page_count or 0)
-            self.language.setText(book.language or "")
-            self.cover_url.setText(book.cover_url or "")
-            index = self.cover_type.findData(book.cover_type)
-            self.cover_type.setCurrentIndex(index if index >= 0 else 0)
-            index = self.read_status.findData(book.read_status)
-            self.read_status.setCurrentIndex(index if index >= 0 else 0)
-            self.score.setValue(float(book.score) if book.score else 0.5)
-            self.saga.setText(book.saga or "")
-            self.saga_number.setValue(book.saga_number or 0)
-            self.description.setPlainText(book.description or "")
-            self.notes.setPlainText(book.notes or "")
-            self._source = book.source
-            if book.location_id is not None:
-                index = self.location.findData(book.location_id)
-                if index >= 0:
-                    self.location.setCurrentIndex(index)
-            if book.status_id is not None:
-                index = self.status.findData(book.status_id)
-                if index >= 0:
-                    self.status.setCurrentIndex(index)
+        book = get_repo().get_book(self.book_id)
+        if book is None:
+            QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
+            self.reject()
+            return
+        self.isbn.setText(book.get("isbn") or "")
+        self.title.setText(book.get("title") or "")
+        self.subtitle.setText(book.get("subtitle") or "")
+        self.authors.setText(", ".join(book.get("authors") or []))
+        self.publisher.setText(book.get("publisher") or "")
+        self.published_date.setText(
+            book.get("published_date")
+            or (str(book["published_year"]) if book.get("published_year") else "")
+        )
+        self.pages.setValue(book.get("page_count") or 0)
+        self.language.setText(book.get("language") or "")
+        self.cover_url.setText(book.get("cover_url") or "")
+        index = self.cover_type.findData(book.get("cover_type"))
+        self.cover_type.setCurrentIndex(index if index >= 0 else 0)
+        index = self.read_status.findData(book.get("read_status"))
+        self.read_status.setCurrentIndex(index if index >= 0 else 0)
+        self.score.setValue(float(book["score"]) if book.get("score") else 0.5)
+        self.saga.setText(book.get("saga") or "")
+        self.saga_number.setValue(book.get("saga_number") or 0)
+        self.description.setPlainText(book.get("description") or "")
+        self.notes.setPlainText(book.get("notes") or "")
+        self._source = book.get("source")
+        if book.get("location_id") is not None:
+            index = self.location.findData(book["location_id"])
+            if index >= 0:
+                self.location.setCurrentIndex(index)
+        if book.get("status_id") is not None:
+            index = self.status.findData(book["status_id"])
+            if index >= 0:
+                self.status.setCurrentIndex(index)
 
     # -- ISBN lookup -------------------------------------------------------- #
     def _on_lookup_clicked(self) -> None:
@@ -508,98 +509,98 @@ class BookDetailsDialog(QDialog):
         layout.addLayout(buttons)
 
     def _load(self) -> None:
-        with session_scope() as db:
-            book = library.get_book(db, self.book_id)
-            if book is None:
-                QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
-                self.reject()
-                return
+        repo = get_repo()
+        book = repo.get_book(self.book_id)
+        if book is None:
+            QMessageBox.warning(self, _("Not found"), _("This book no longer exists."))
+            self.reject()
+            return
 
-            self.cover.load(book.cover_url, book.title or "")
-            self.title_label.setText(book.title or _("Untitled"))
-            self.subtitle_label.setText(book.subtitle or "")
-            self.subtitle_label.setVisible(bool(book.subtitle))
-            self.authors_label.setText(book.author_display or "")
+        loans = repo.book_loans(self.book_id)
 
-            if book.status is not None:
-                style_badge(
-                    self.status_badge,
-                    display_status(book.status),
-                    book.status.color or "#64748b",
-                )
-                self.status_badge.setVisible(True)
-            else:
-                self.status_badge.setVisible(False)
+        self.cover.load(book.get("cover_url"), book.get("title") or "")
+        self.title_label.setText(book.get("title") or _("Untitled"))
+        self.subtitle_label.setText(book.get("subtitle") or "")
+        self.subtitle_label.setVisible(bool(book.get("subtitle")))
+        self.authors_label.setText(", ".join(book.get("authors") or []) or _("Unknown author"))
 
-            self.fields["publisher"].setText(book.publisher.name if book.publisher else "—")
-            published = book.published_date or (
-                str(book.published_year) if book.published_year else ""
+        status = book.get("status")
+        if status:
+            style_badge(
+                self.status_badge,
+                display_status(status),
+                status.get("color") or "#64748b",
             )
-            if book.page_count:
-                published = (
-                    _("%s · %s pp.") % (published, book.page_count)
-                    if published
-                    else _("%s pp.") % book.page_count
+            self.status_badge.setVisible(True)
+        else:
+            self.status_badge.setVisible(False)
+
+        self.fields["publisher"].setText(book.get("publisher") or "—")
+        published = book.get("published_date") or (
+            str(book["published_year"]) if book.get("published_year") else ""
+        )
+        if book.get("page_count"):
+            published = (
+                _("%s · %s pp.") % (published, book["page_count"])
+                if published
+                else _("%s pp.") % book["page_count"]
+            )
+        self.fields["published"].setText(published or "—")
+        self.fields["isbn"].setText(book.get("isbn") or "—")
+        self.fields["cover_type"].setText(cover_type_label(book.get("cover_type")) or "—")
+        self.fields["read_status"].setText(read_status_label(book.get("read_status")) or "—")
+        self.fields["score"].setText(score_label(book.get("score")) or "—")
+        saga = ""
+        if book.get("saga"):
+            saga = book["saga"] + (f" #{book['saga_number']}" if book.get("saga_number") else "")
+        self.fields["saga"].setText(saga or "—")
+        location = book.get("location")
+        self.fields["location"].setText((location or {}).get("full_path") or "—")
+
+        loan = book.get("active_loan")
+        if loan:
+            due = _(" due %s") % format_date(loan.get("due_at")) if loan.get("due_at") else ""
+            overdue = _(" · OVERDUE") if loan.get("is_overdue") else ""
+            self.fields["loan"].setText(
+                _("%(borrower)s since %(lent)s%(due)s%(overdue)s")
+                % {
+                    "borrower": loan.get("borrower_name") or "",
+                    "lent": format_date(loan.get("lent_at")),
+                    "due": due,
+                    "overdue": overdue,
+                }
+            )
+        else:
+            self.fields["loan"].setText(_("Not on loan"))
+
+        self.description.setText(book.get("description") or "")
+        self.description.setVisible(bool(book.get("description")))
+        self.description_label.setVisible(bool(book.get("description")))
+        self.notes.setText(book.get("notes") or "")
+        self.notes.setVisible(bool(book.get("notes")))
+        self.notes_label.setVisible(bool(book.get("notes")))
+
+        self.loans.setRowCount(len(loans))
+        for row, item in enumerate(loans):
+            for col, text in enumerate(
+                (
+                    item.get("borrower_name") or "",
+                    format_date(item.get("lent_at")),
+                    format_date(item.get("due_at")),
+                    format_date(item.get("returned_at")) or _("on loan"),
                 )
-            self.fields["published"].setText(published or "—")
-            self.fields["isbn"].setText(book.isbn or "—")
-            self.fields["cover_type"].setText(cover_type_label(book.cover_type) or "—")
-            self.fields["read_status"].setText(read_status_label(book.read_status) or "—")
-            self.fields["score"].setText(score_label(book.score) or "—")
-            saga = ""
-            if book.saga:
-                saga = book.saga + (f" #{book.saga_number}" if book.saga_number else "")
-            self.fields["saga"].setText(saga or "—")
-            self.fields["location"].setText(book.location.full_path if book.location else "—")
-
-            loan = book.active_loan
-            if loan:
-                due = _(" due %s") % format_date(loan.due_at) if loan.due_at else ""
-                overdue = _(" · OVERDUE") if loan.is_overdue else ""
-                self.fields["loan"].setText(
-                    _("%(borrower)s since %(lent)s%(due)s%(overdue)s")
-                    % {
-                        "borrower": loan.borrower_name,
-                        "lent": format_date(loan.lent_at),
-                        "due": due,
-                        "overdue": overdue,
-                    }
-                )
-            else:
-                self.fields["loan"].setText(_("Not on loan"))
-
-            self.description.setText(book.description or "")
-            self.description.setVisible(bool(book.description))
-            self.description_label.setVisible(bool(book.description))
-            self.notes.setText(book.notes or "")
-            self.notes.setVisible(bool(book.notes))
-            self.notes_label.setVisible(bool(book.notes))
-
-            self.loans.setRowCount(len(book.loans))
-            for row, loan in enumerate(book.loans):
-                for col, text in enumerate(
-                    (
-                        loan.borrower_name,
-                        format_date(loan.lent_at),
-                        format_date(loan.due_at),
-                        format_date(loan.returned_at) or _("on loan"),
-                    )
-                ):
-                    self.loans.setItem(row, col, QTableWidgetItem(text))
-            self.loans.resizeColumnsToContents()
-            self.loans_label.setVisible(bool(book.loans))
-            self.loans.setVisible(bool(book.loans))
+            ):
+                self.loans.setItem(row, col, QTableWidgetItem(text))
+        self.loans.resizeColumnsToContents()
+        self.loans_label.setVisible(bool(loans))
+        self.loans.setVisible(bool(loans))
 
     def _edit(self) -> None:
         dialog = BookDialog(self, book_id=self.book_id)
         if dialog.exec() != BookDialog.DialogCode.Accepted:
             return
         try:
-            with session_scope() as db:
-                book = library.get_book(db, self.book_id)
-                if book is None:
-                    raise ValueError(_("This book no longer exists."))
-                library.update_book(db, book, dialog.data())
+            get_repo().update_book(self.book_id, dialog.data())
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Could not save"), str(exc))
             return
@@ -707,8 +708,7 @@ class LocationDialog(QDialog):
         form.addRow(_("Kind"), self.kind)
         form.addRow(_("Description"), self.description)
 
-        with session_scope() as db:
-            choices = location_choices(db)
+        choices = location_choices(get_repo().list_locations())
         fill_combo(self.parent, choices, none_label=_("— top level —"), current=preselect_parent)
 
         buttons = QDialogButtonBox(
@@ -723,20 +723,17 @@ class LocationDialog(QDialog):
         layout.addWidget(buttons)
 
     def _load(self) -> None:
-        from ..models import Location
-
-        with session_scope() as db:
-            location = db.get(Location, self.location_id)
-            if location is None:
-                QMessageBox.warning(self, _("Not found"), _("This location no longer exists."))
-                self.reject()
-                return
-            self.name.setText(location.name or "")
-            self.kind.setText(location.kind or "")
-            self.description.setPlainText(location.description or "")
-            index = self.parent.findData(location.parent_id)
-            if index >= 0:
-                self.parent.setCurrentIndex(index)
+        location = get_repo().get_location(self.location_id)
+        if location is None:
+            QMessageBox.warning(self, _("Not found"), _("This location no longer exists."))
+            self.reject()
+            return
+        self.name.setText(location.get("name") or "")
+        self.kind.setText(location.get("kind") or "")
+        self.description.setPlainText(location.get("description") or "")
+        index = self.parent.findData(location.get("parent_id"))
+        if index >= 0:
+            self.parent.setCurrentIndex(index)
 
     def _on_ok(self) -> None:
         if not self.name.text().strip():
@@ -808,20 +805,17 @@ class StatusDialog(QDialog):
             self._render_color()
 
     def _load(self) -> None:
-        from ..models import Status
-
-        with session_scope() as db:
-            status = db.get(Status, self.status_id)
-            if status is None:
-                QMessageBox.warning(self, _("Not found"), _("This status no longer exists."))
-                self.reject()
-                return
-            self.name.setText(status.name or "")
-            self.icon.setText(status.icon or "")
-            self.description.setPlainText(status.description or "")
-            if status.color:
-                self._color = status.color
-                self._render_color()
+        status = get_repo().get_status(self.status_id)
+        if status is None:
+            QMessageBox.warning(self, _("Not found"), _("This status no longer exists."))
+            self.reject()
+            return
+        self.name.setText(status.get("name") or "")
+        self.icon.setText(status.get("icon") or "")
+        self.description.setPlainText(status.get("description") or "")
+        if status.get("color"):
+            self._color = status["color"]
+            self._render_color()
 
     def _on_ok(self) -> None:
         if not self.name.text().strip():

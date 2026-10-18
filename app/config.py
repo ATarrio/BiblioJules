@@ -39,9 +39,32 @@ class Settings(BaseSettings):
     isbn_lookup_timeout: float = 10.0
     app_contact: str = "bibliophile@example.com"
 
+    # --- Authentication -----------------------------------------------------
+    # Logins are opaque random tokens stored (hashed) in the database, so there
+    # is no signing secret to configure: revoking a session is a database write
+    # and survives a restart without one.
+
+    # How long a login lasts before it must be repeated.
+    session_ttl_days: int = 30
+    # Send the session cookie only over HTTPS. Turn this on when hosting behind
+    # a TLS reverse proxy; leave off for local ``http://127.0.0.1`` development.
+    cookie_secure: bool = False
+
+    # Extra browser origins allowed to call the JSON API (comma separated).
+    # Native desktop/mobile clients do not need this.
+    cors_origins: str = ""
+
+    # Expose FastAPI's interactive docs (``/docs``) and the OpenAPI schema.
+    # Convenient in development; consider disabling on a public instance.
+    enable_docs: bool = True
+
     @property
     def user_agent(self) -> str:
         return f"BiblioJules/0.1 (home library catalog; {self.app_contact})"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache

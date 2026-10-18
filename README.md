@@ -59,6 +59,9 @@ SQLite by default, but the database layer is fully abstracted so switching to
   language only means dropping a `app/locales/<code>.json` file (see below).
 - **JSON API** (`/api/...`) and interactive API docs at `/docs`, so a future
   mobile app or SPA can reuse the same backend.
+- **Accounts & a shared catalog.** Username/password sign-in, with an admin
+  panel to add or remove people. Everyone shares the same shelves, so the app
+  can be hosted and reached from the web, desktop and phone.
 
 ---
 
@@ -88,13 +91,54 @@ automatically on first run at `data/library.db`.
 
 ---
 
+## Accounts & sign-in
+
+BiblioJules is a **shared** library: every account sees and edits the same
+catalogue. Accounts are access control, not private shelves.
+
+The first administrator has to be created from a terminal (nobody can sign in
+yet); after that, everyone else is added from the web UI:
+
+```bash
+python -m app.cli create-admin          # prompts for a password
+python -m app.cli create-user jane      # an ordinary member
+python -m app.cli list-users
+python -m app.cli set-password jane
+python -m app.cli delete-user jane
+```
+
+Then log in at <http://127.0.0.1:8000/login>. **Administrators** get an extra
+*Users* page to add accounts, change roles, reset passwords or disable someone.
+Members have full run of the catalogue — only user management is restricted.
+
+Sessions last 30 days (see `SESSION_TTL_DAYS`) and live on the server, so
+signing out, changing a password or disabling an account takes effect at once.
+
+### Hosting it safely
+
+If you expose the app beyond your home network:
+
+- Serve it over **HTTPS** (behind a reverse proxy) and set `COOKIE_SECURE=true`,
+  so the session cookie is only ever sent encrypted.
+- Consider `ENABLE_DOCS=false` to hide `/docs` and the OpenAPI schema.
+- `/api/*` is bearer-token only: log in with `POST /api/auth/login` to obtain a
+  token. The desktop app (remote mode) and the Android app use the same route.
+
+---
+
 ## Desktop app (optional, no browser)
 
 There is also a native **Qt (PySide6)** desktop front-end for when you'd rather
-not run a browser. It talks to the **same SQLite database** and reuses the same
-service layer as the web app, so you can switch between the two freely — no
-import/export needed (just don't run both against the same DB at the same
-instant).
+not run a browser. It has two modes, chosen from **File → Settings…**:
+
+- **Local database** (the default) — it opens the **same SQLite database** and
+  reuses the same service layer as the web app, so you can switch between the
+  two freely — no import/export needed (just don't run both against the same DB
+  at the same instant).
+- **Remote server** — it signs in to a hosted instance over the JSON API and
+  keeps **no local database at all**, so a laptop can use the library from
+  anywhere. Type the backend URL (e.g. `https://library.example.com`), sign in
+  once, and the token is remembered.
 
 ```bash
 # Install the extra dependency (Qt + the rest)
@@ -117,11 +161,19 @@ Locations, Statuses, Discover** — with the same capabilities:
 - lend and return books, with loan history;
 - manage the nested location tree and the customisable statuses.
 
-Because it opens the database file directly, `DATABASE_URL` must resolve to the
-same file for both front-ends. The default (`data/library.db`, absolute path)
-does; if you override `DATABASE_URL` in `.env` with a *relative* path it will
-resolve against the working directory you launch from, so prefer an absolute
-path there.
+The button at the bottom of the sidebar always shows where the data comes from
+(the local database, or the account you signed in with) and reopens the settings
+dialog when clicked.
+
+In **local mode**, because it opens the database file directly, `DATABASE_URL`
+must resolve to the same file for both front-ends. The default
+(`data/library.db`, absolute path) does; if you override `DATABASE_URL` in
+`.env` with a *relative* path it will resolve against the working directory you
+launch from, so prefer an absolute path there.
+
+Either way the choice is written to `data/preferences.json`. In remote mode that
+file also holds the sign-in token, so it is created with `0600` permissions —
+keep it out of version control (`data/` already is).
 
 ---
 
@@ -145,30 +197,38 @@ path there.
 ├── app/
 │   ├── main.py            # FastAPI app factory + startup (create tables, seed)
 │   ├── config.py          # Settings (DATABASE_URL, timeouts…) via pydantic-settings
+│   ├── dependencies.py    # Auth (session/bearer) + CSRF guards
+│   ├── cli.py             # Admin CLI (create-admin, create-user, …)
 │   ├── database.py        # Engine, session, Declarative Base
 │   ├── templating.py      # Jinja2 environment + filters
 │   ├── i18n.py            # Translation core (gettext-style) + language middleware
-│   ├── preferences.py     # Small JSON prefs store (desktop UI language, ...)
+│   ├── preferences.py     # Small JSON prefs store (UI language, data source, token)
 │   ├── locales/           # Translation catalogs, e.g. es-419.json (English = source)
 │   ├── schemas.py         # Pydantic request models for the JSON API
 │   ├── models/            # SQLAlchemy models (one file per concept)
 │   │   ├── book.py  author.py  publisher.py
 │   │   ├── location.py  status.py  loan.py
+│   │   ├── user.py  token.py
 │   │   └── associations.py
 │   ├── services/          # Business logic (framework-agnostic)
 │   │   ├── library.py     #   CRUD, filtering, loans, locations, statuses
+│   │   ├── auth.py        #   Accounts, password hashing, tokens
 │   │   ├── isbn_lookup.py #   Online ISBN/metadata lookups
 │   │   ├── serializers.py #   Model → dict for the JSON API
 │   │   └── seed.py        #   Default statuses
 │   ├── routers/           # HTTP endpoints (thin, call services)
 │   │   ├── pages.py  books.py  locations.py  statuses.py
+│   │   ├── auth.py        #   /login, /logout, /api/auth/...
+│   │   ├── admin.py       #   /admin/users + /api/users
 │   │   ├── lookup.py      #   Discover search / prefill
 │   │   └── api.py         #   /api/... JSON API
-│   ├── templates/         # Jinja2 templates (+ reusable macros)
+│   ├── templates/         # Jinja2 templates (auth/, admin/, books/, ...)
 │   ├── static/            # CSS & JS
 │   └── desktop/           # Qt (PySide6) desktop front-end
-│       ├── app.py         #   app bootstrap (create tables + seed, show window)
+│       ├── app.py         #   bootstrap: choose local or remote, show the window
+│       ├── repo.py        #   data access: LocalRepo (SQLite) / RemoteRepo (HTTP)
 │       ├── main_window.py #   sidebar + stacked views
+│       ├── settings_dialog.py  # where is the library + sign in
 │       ├── dashboard.py  catalog.py  locations_view.py
 │       ├── statuses_view.py  discover.py
 │       ├── dialogs.py     #   add/edit book, lend, location, status dialogs
@@ -247,22 +307,36 @@ alembic upgrade head
 ## JSON API
 
 The HTML UI uses the same service layer, but a small JSON API is exposed for
-scripting or a future front-end:
+scripting and for the desktop/mobile clients. Everything under `/api/` requires
+a **bearer token**: obtain one with `POST /api/auth/login` and send it as
+`Authorization: Bearer <token>`.
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`) |
+| `POST /api/auth/login` | Exchange username/password for a token |
+| `GET /api/auth/me` · `POST /api/auth/logout` | Current account / revoke the token |
+| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`, `dir`) |
 | `GET /api/books/{id}` | One book |
+| `GET /api/books/by-isbn/{isbn}` | One book by ISBN (duplicate checks) |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Create / update / delete |
 | `POST /api/books/{id}/lend` · `.../return` | Lend or return |
-| `GET /api/locations` · `POST /api/locations` | Locations |
-| `GET /api/statuses` · `POST /api/statuses` | Statuses |
+| `GET /api/books/{id}/loans` | Full loan history |
+| `GET /api/locations` · `GET /api/locations/{id}` · `POST /api/locations` · `PUT` · `DELETE` | Locations |
+| `GET /api/statuses` · `GET /api/statuses/{id}` · `POST /api/statuses` · `PUT` · `DELETE` | Statuses |
+| `GET /api/authors` · `GET /api/publishers` · `GET /api/sagas` | Filter reference data |
+| `GET /api/dashboard` · `GET /api/stats` | Dashboard aggregate / counters |
+| `GET /api/meta` | Cover types, read statuses, score range, sorts, roles, languages |
+| `GET /api/i18n/{lang}` | String catalog for a language |
 | `GET /api/lookup/isbn/{isbn}` | Online metadata lookup |
 | `GET /api/search?q=` | Online title/author search |
-| `GET /api/stats` | Counters for the dashboard |
-| `GET /health` | Uptime/liveness check — `200` when the DB answers, `503` otherwise |
+| `GET /api/users` · `POST /api/users` · `PUT /api/users/{id}` · `DELETE /api/users/{id}` | User management (**admin only**) |
+| `GET /health` | Uptime/liveness check — `200` when the DB answers, `503` otherwise (public) |
 
 Interactive docs: <http://127.0.0.1:8000/docs>
+
+`PUT` endpoints follow the usual rule: fields you leave **out** are untouched,
+and a field you send as `null` is **cleared** — which is how a form-style client
+removes a book from its shelf without overwriting the rest of the record.
 
 ---
 
@@ -294,7 +368,8 @@ app/locales/es-419.json   # Español (Latinoamérica)
   bottom of the sidebar (or in the mobile header); the choice is stored in a
   cookie.
 - **Desktop:** use the selector at the bottom of the sidebar. The choice is saved
-  in `data/preferences.json` and applied on the next launch.
+  in `data/preferences.json` (along with the local/remote mode and, in remote
+  mode, the sign-in token) and applied on the next launch.
 - **Adding a language:** copy `app/locales/es-419.json`, translate the values,
   and add the code + endonym to `SUPPORTED_LANGUAGES` in `app/i18n.py`. A missing
   key simply falls back to the English text written in the code, so a partial
@@ -307,7 +382,8 @@ app/locales/es-419.json   # Español (Latinoamérica)
 
 ## Notes
 
-- The app is intended for a trusted home network; it has **no authentication**.
-  Don't expose it directly to the internet without adding auth.
+- The app is meant to be shared by a household. It now ships with accounts, so
+  it is safe to host — but do read *Hosting it safely* above before exposing it
+  to the internet (HTTPS, `COOKIE_SECURE`, and don't leave `/docs` open).
 - Everything is local: your data lives only in your database file (and the
   online lookups only send the ISBN you scan).

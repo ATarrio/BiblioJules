@@ -5,16 +5,24 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .database import Base, SessionLocal, engine, ensure_schema
+from .dependencies import (
+    AuthenticationRequired,
+    PermissionDenied,
+    require_admin,
+    require_user,
+)
 from .i18n import LanguageMiddleware, _
-from .routers import api, books, health, locations, lookup, pages, statuses
+from .routers import admin, api, auth, books, health, locations, lookup, pages, statuses
 from .services.library import prune_orphans, sync_published_years
 from .services.seed import seed_defaults
 from .templating import templates
@@ -47,36 +55,66 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    docs_enabled = settings.enable_docs
     app = FastAPI(
         title=settings.app_name,
         description=settings.app_description,
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
-
-    @app.middleware("http")
-    async def log_request_headers(request: Request, call_next):
-        # Temporary diagnostic: log who is calling us (uvicorn's access log
-        # omits headers, so an unexpected hit like `GET /v1/models` is hard to
-        # attribute). Handy for tracking down OpenAI-compatible clients that
-        # have been pointed at this port.
-        header_dump = "; ".join(f"{key}: {value}" for key, value in request.headers.items())
-        logging.info("INCOMING %s %s | %s", request.method, request.url.path, header_dump)
-        return await call_next(request)
 
     # Runs outermost so the per-request language is set before anything renders.
     app.add_middleware(LanguageMiddleware)
 
+    if settings.cors_origin_list:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    # JSON API first (its paths are unambiguous), then the HTML UI.
+    # Public first: health, login/logout and the language switcher. Then every
+    # other router behind the appropriate guard. The JSON API authenticates with
+    # a bearer token; the HTML routes with the session cookie.
     app.include_router(health.router)
-    app.include_router(api.router)
-    app.include_router(lookup.router)
-    app.include_router(books.router)
-    app.include_router(locations.router)
-    app.include_router(statuses.router)
-    app.include_router(pages.router)
+    app.include_router(auth.router)
+
+    app.include_router(api.router, dependencies=[Depends(require_user)])
+    app.include_router(lookup.router, dependencies=[Depends(require_user)])
+    app.include_router(books.router, dependencies=[Depends(require_user)])
+    app.include_router(locations.router, dependencies=[Depends(require_user)])
+    app.include_router(statuses.router, dependencies=[Depends(require_user)])
+    app.include_router(pages.router, dependencies=[Depends(require_user)])
+    app.include_router(admin.router, dependencies=[Depends(require_admin)])
+
+    @app.exception_handler(AuthenticationRequired)
+    async def _authentication_required(request: Request, exc: AuthenticationRequired):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(
+                {"detail": "Not authenticated"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        target = "/login"
+        if exc.next_url:
+            target += "?" + urlencode({"next": exc.next_url})
+        return RedirectResponse(target, status_code=303)
+
+    @app.exception_handler(PermissionDenied)
+    async def _permission_denied(request: Request, exc: PermissionDenied):
+        detail = exc.detail or _("You do not have permission to do that.")
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": detail}, status_code=403)
+        return templates.TemplateResponse(
+            request, "403.html", {"message": detail}, status_code=403
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def not_found(request: Request, exc: StarletteHTTPException):
@@ -88,9 +126,10 @@ def create_app() -> FastAPI:
                 {"message": exc.detail or _("Not found")},
                 status_code=404,
             )
-        from fastapi.responses import JSONResponse
 
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        return JSONResponse(
+            {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+        )
 
     return app
 

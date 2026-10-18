@@ -17,14 +17,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .db import session_scope
+from .repo import get_repo
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, BRAND_500, EMERALD, VIOLET
 from .util import badge, card, page_header, section_title
 from .. import i18n
 from ..i18n import _
-from ..services import library
-from ..services.serializers import book_to_dict
 
 _COLUMNS = 4
 
@@ -139,10 +137,10 @@ class DashboardView(QWidget):
 
     # ------------------------------------------------------------------ #
     def refresh(self) -> None:
-        with session_scope() as db:
-            stats = library.get_stats(db)
-            counts = library.status_counts(db)
-            recent = [book_to_dict(book) for book in library.query_books(db, sort="recent")[:8]]
+        repo = get_repo()
+        stats = repo.stats()
+        counts = repo.status_counts()
+        recent = repo.list_books(sort="recent")[:8]
 
         library_count = stats["total"] - stats["wishlist"]
         if library_count < 0:
@@ -163,7 +161,9 @@ class DashboardView(QWidget):
         if not counts:
             self._status_grid.addWidget(QLabel(_("No statuses yet.")), 0, 0)
             return
-        for index, (status, count) in enumerate(counts):
+        for index, entry in enumerate(counts):
+            status = entry.get("status") or {}
+            count = entry.get("count", 0)
             chip = QFrame()
             chip.setStyleSheet(
                 "QFrame { background-color: #0f172a; border: 1px solid #1e293b;"
@@ -175,9 +175,12 @@ class DashboardView(QWidget):
             row.setSpacing(8)
             dot = QLabel()
             dot.setFixedSize(10, 10)
-            dot.setStyleSheet(f"background-color: {status.color}; border-radius: 5px;")
-            name_text = i18n.status_label(status)
-            name = QLabel(f"{status.icon} {name_text}".strip() if status.icon else name_text)
+            dot.setStyleSheet(
+                f"background-color: {status.get('color') or '#64748b'}; border-radius: 5px;"
+            )
+            name_text = i18n.status_label_from(status.get("slug"), status.get("name"))
+            icon = status.get("icon")
+            name = QLabel(f"{icon} {name_text}".strip() if icon else name_text)
             name.setStyleSheet("color: #e2e8f0; border: none; background: transparent;")
             tally = QLabel(str(count))
             tally.setStyleSheet(

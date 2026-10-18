@@ -105,6 +105,21 @@ QListWidget#NavList::item:selected {{
     font-weight: bold;
 }}
 
+/* The "which library am I using?" footer button: reads as a caption, not a button. */
+QPushButton#ConnectionButton {{
+    background: transparent;
+    border: none;
+    color: {SLATE_400};
+    font-weight: normal;
+    text-align: left;
+    padding: 6px 8px;
+}}
+QPushButton#ConnectionButton:hover {{
+    background-color: {SLATE_800};
+    color: {SLATE_200};
+    border-radius: 8px;
+}}
+
 /* ---------- page headers ---------- */
 QLabel#PageTitle {{
     font-size: 24px;

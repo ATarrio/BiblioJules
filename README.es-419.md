@@ -67,6 +67,10 @@ de una sola línea.
   `app/locales/<code>.json` (ver más abajo).
 - **API JSON** (`/api/...`) y documentación interactiva en `/docs`, para que una
   futura app móvil o SPA pueda reutilizar el mismo backend.
+- **Cuentas y catálogo compartido.** Inicio de sesión con usuario y contraseña, y
+  un panel de administración para agregar o quitar personas. Todos comparten los
+  mismos estantes, así que la app puede alojarse y usarse desde la web, el
+  escritorio y el teléfono.
 
 ---
 
@@ -97,13 +101,61 @@ automáticamente en la primera ejecución, en `data/library.db`.
 
 ---
 
+## Cuentas e inicio de sesión
+
+BiblioJules es una biblioteca **compartida**: todas las cuentas ven y editan el
+mismo catálogo. Las cuentas son control de acceso, no estantes privados.
+
+La primera cuenta de administrador debe crearse desde una terminal (todavía no
+hay nadie que pueda iniciar sesión); después, todo el resto se agrega desde la
+interfaz web:
+
+```bash
+python -m app.cli create-admin          # pide una contraseña
+python -m app.cli create-user ana       # una cuenta normal
+python -m app.cli list-users
+python -m app.cli set-password ana
+python -m app.cli delete-user ana
+```
+
+Luego inicia sesión en <http://127.0.0.1:8000/login>. Las cuentas
+**administradoras** tienen una página extra, *Usuarios*, para agregar cuentas,
+cambiar roles, restablecer contraseñas o deshabilitar a alguien. Las cuentas
+normales tienen acceso completo al catálogo —solo la gestión de usuarios está
+restringida.
+
+Las sesiones duran 30 días (ver `SESSION_TTL_DAYS`) y viven en el servidor, así
+que cerrar sesión, cambiar una contraseña o deshabilitar una cuenta surte efecto
+de inmediato.
+
+### Alojarla de forma segura
+
+Si expones la app más allá de tu red doméstica:
+
+- Sírvela por **HTTPS** (detrás de un proxy inverso) y define
+  `COOKIE_SECURE=true`, para que la cookie de sesión solo se envíe cifrada.
+- Considera `ENABLE_DOCS=false` para ocultar `/docs` y el esquema OpenAPI.
+- `/api/*` solo acepta tokens Bearer: inicia sesión con `POST /api/auth/login`
+  para obtener uno. La app de escritorio (modo remoto) y la app de Android usan
+  la misma ruta.
+
+---
+
 ## App de escritorio (opcional, sin navegador)
 
 También hay una interfaz nativa de escritorio en **Qt (PySide6)** para cuando
-prefieras no usar un navegador. Se conecta a la **misma base de datos SQLite** y
-reutiliza la misma capa de servicios que la app web, así que puedes alternar
-entre las dos libremente —sin necesidad de importar/exportar— (solo no ejecutes
-ambas contra la misma base de datos al mismo tiempo).
+prefieras no usar un navegador. Tiene dos modos, que se eligen desde
+**Archivo → Configuración…**:
+
+- **Base de datos local** (el predeterminado): abre la **misma base de datos
+  SQLite** y reutiliza la misma capa de servicios que la app web, así que puedes
+  alternar entre las dos libremente —sin necesidad de importar/exportar— (solo no
+  ejecutes ambas contra la misma base de datos al mismo tiempo).
+- **Servidor remoto**: inicia sesión en una instancia alojada a través de la API
+  JSON y **no guarda ninguna base de datos local**, así que un portátil puede usar
+  la biblioteca desde donde sea. Escribe la URL del servidor (por ejemplo,
+  `https://biblioteca.ejemplo.com`), inicia sesión una vez y el token queda
+  recordado.
 
 ```bash
 # Instala la dependencia extra (Qt + el resto)
@@ -127,11 +179,20 @@ Catálogo, Ubicaciones, Estados, Descubrir**— con las mismas capacidades:
 - prestar y devolver libros, con historial de préstamos;
 - gestionar el árbol de ubicaciones anidadas y los estados personalizables.
 
-Como abre el archivo de base de datos directamente, `DATABASE_URL` debe apuntar
-al mismo archivo para ambas interfaces. El valor predeterminado
-(`data/library.db`, ruta absoluta) lo hace; si sobrescribes `DATABASE_URL` en
-`.env` con una ruta *relativa*, se resolverá contra el directorio de trabajo
-desde el que la inicies, así que es preferible usar una ruta absoluta.
+El botón al pie de la barra lateral siempre muestra de dónde vienen los datos (la
+base de datos local, o la cuenta con la que iniciaste sesión) y vuelve a abrir el
+diálogo de configuración al hacerle clic.
+
+En **modo local**, como abre el archivo de base de datos directamente,
+`DATABASE_URL` debe apuntar al mismo archivo para ambas interfaces. El valor
+predeterminado (`data/library.db`, ruta absoluta) lo hace; si sobrescribes
+`DATABASE_URL` en `.env` con una ruta *relativa*, se resolverá contra el
+directorio de trabajo desde el que la inicies, así que es preferible usar una
+ruta absoluta.
+
+En cualquier caso, la elección se guarda en `data/preferences.json`. En modo
+remoto ese archivo también contiene el token de sesión, por lo que se crea con
+permisos `0600`: mantenlo fuera del control de versiones (`data/` ya lo está).
 
 ---
 
@@ -157,30 +218,38 @@ desde el que la inicies, así que es preferible usar una ruta absoluta.
 ├── app/
 │   ├── main.py            # Fábrica de la app FastAPI + arranque (crea tablas, siembra)
 │   ├── config.py          # Configuración (DATABASE_URL, timeouts…) vía pydantic-settings
+│   ├── dependencies.py    # Guardas de autenticación (sesión/Bearer) y CSRF
+│   ├── cli.py             # CLI de administración (create-admin, create-user, …)
 │   ├── database.py        # Motor, sesión, Base declarativa
 │   ├── templating.py      # Entorno Jinja2 + filtros
 │   ├── i18n.py            # Núcleo de traducción (estilo gettext) + middleware de idioma
-│   ├── preferences.py     # Pequeño almacén JSON de preferencias (idioma de escritorio, ...)
+│   ├── preferences.py     # Pequeño almacén JSON (idioma, origen de datos, token)
 │   ├── locales/           # Catálogos de traducción, p. ej. es-419.json (el inglés es la fuente)
 │   ├── schemas.py         # Modelos de request de Pydantic para la API JSON
 │   ├── models/            # Modelos SQLAlchemy (un archivo por concepto)
 │   │   ├── book.py  author.py  publisher.py
 │   │   ├── location.py  status.py  loan.py
+│   │   ├── user.py  token.py
 │   │   └── associations.py
 │   ├── services/          # Lógica de negocio (agnóstica del framework)
 │   │   ├── library.py     #   CRUD, filtros, préstamos, ubicaciones, estados
+│   │   ├── auth.py        #   Cuentas, hash de contraseñas, tokens
 │   │   ├── isbn_lookup.py #   Búsquedas en línea de ISBN/metadatos
 │   │   ├── serializers.py #   Modelo → dict para la API JSON
 │   │   └── seed.py        #   Estados predeterminados
 │   ├── routers/           # Endpoints HTTP (delgados, llaman a los servicios)
 │   │   ├── pages.py  books.py  locations.py  statuses.py
+│   │   ├── auth.py        #   /login, /logout, /api/auth/...
+│   │   ├── admin.py       #   /admin/users + /api/users
 │   │   ├── lookup.py      #   Búsqueda y prellenado de Descubrir
 │   │   └── api.py         #   API JSON /api/...
-│   ├── templates/         # Plantillas Jinja2 (+ macros reutilizables)
+│   ├── templates/         # Plantillas Jinja2 (auth/, admin/, books/, ...)
 │   ├── static/            # CSS y JS
 │   └── desktop/           # Interfaz de escritorio Qt (PySide6)
-│       ├── app.py         #   arranque de la app (crea tablas + siembra, muestra la ventana)
+│       ├── app.py         #   arranque: elige local o remoto y muestra la ventana
+│       ├── repo.py        #   acceso a datos: LocalRepo (SQLite) / RemoteRepo (HTTP)
 │       ├── main_window.py #   barra lateral + vistas apiladas
+│       ├── settings_dialog.py  # dónde está la biblioteca + inicio de sesión
 │       ├── dashboard.py  catalog.py  locations_view.py
 │       ├── statuses_view.py  discover.py
 │       ├── dialogs.py     #   diálogos de alta/edición de libro, préstamo, ubicación, estado
@@ -263,22 +332,36 @@ alembic upgrade head
 ## API JSON
 
 La interfaz HTML usa la misma capa de servicios, pero se expone una pequeña API
-JSON para scripting o una futura interfaz:
+JSON para scripting y para los clientes de escritorio/móvil. Todo lo que está
+bajo `/api/` requiere un **token Bearer**: obtén uno con `POST /api/auth/login` y
+envíalo como `Authorization: Bearer <token>`.
 
 | Método y ruta | Propósito |
 | --- | --- |
-| `GET /api/books` | Lista/filtra libros (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`) |
+| `POST /api/auth/login` | Canjear usuario/contraseña por un token |
+| `GET /api/auth/me` · `POST /api/auth/logout` | Cuenta actual / revocar el token |
+| `GET /api/books` | Lista/filtra libros (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`, `dir`) |
 | `GET /api/books/{id}` | Un libro |
+| `GET /api/books/by-isbn/{isbn}` | Un libro por ISBN (para detectar duplicados) |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Crear / actualizar / eliminar |
 | `POST /api/books/{id}/lend` · `.../return` | Prestar o devolver |
-| `GET /api/locations` · `POST /api/locations` | Ubicaciones |
-| `GET /api/statuses` · `POST /api/statuses` | Estados |
+| `GET /api/books/{id}/loans` | Historial completo de préstamos |
+| `GET /api/locations` · `GET /api/locations/{id}` · `POST /api/locations` · `PUT` · `DELETE` | Ubicaciones |
+| `GET /api/statuses` · `GET /api/statuses/{id}` · `POST /api/statuses` · `PUT` · `DELETE` | Estados |
+| `GET /api/authors` · `GET /api/publishers` · `GET /api/sagas` | Datos de referencia para filtros |
+| `GET /api/dashboard` · `GET /api/stats` | Agregado del panel / contadores |
+| `GET /api/meta` | Tipos de tapa, estados de lectura, rango de puntaje, órdenes, roles, idiomas |
+| `GET /api/i18n/{lang}` | Catálogo de cadenas de un idioma |
 | `GET /api/lookup/isbn/{isbn}` | Búsqueda de metadatos en línea |
 | `GET /api/search?q=` | Búsqueda en línea por título/autor |
-| `GET /api/stats` | Contadores para el panel |
-| `GET /health` | Chequeo de disponibilidad — `200` cuando la base de datos responde, `503` en caso contrario |
+| `GET /api/users` · `POST /api/users` · `PUT /api/users/{id}` · `DELETE /api/users/{id}` | Gestión de usuarios (**solo administradores**) |
+| `GET /health` | Chequeo de disponibilidad — `200` cuando la base de datos responde, `503` en caso contrario (público) |
 
 Documentación interactiva: <http://127.0.0.1:8000/docs>
+
+Los endpoints `PUT` siguen la regla habitual: los campos que **omites** quedan
+intactos y un campo que envías como `null` se **borra**; así un cliente con
+formularios quita un libro de su estante sin sobrescribir el resto del registro.
 
 ---
 
@@ -310,7 +393,8 @@ app/locales/es-419.json   # Español (Latinoamérica)
   `Accept-Language` del navegador (en ese orden). Usa el selector al final de la
   barra lateral (o en el encabezado móvil); la elección se guarda en una cookie.
 - **Escritorio:** usa el selector al final de la barra lateral. La elección se
-  guarda en `data/preferences.json` y se aplica en el próximo inicio.
+  guarda en `data/preferences.json` (junto con el modo local/remoto y, en modo
+  remoto, el token de sesión) y se aplica en el próximo inicio.
 - **Agregar un idioma:** copia `app/locales/es-419.json`, traduce los valores y
   añade el código + endónimo a `SUPPORTED_LANGUAGES` en `app/i18n.py`. Una clave
   faltante simplemente recurre al texto en inglés escrito en el código, así que
@@ -323,8 +407,8 @@ app/locales/es-419.json   # Español (Latinoamérica)
 
 ## Notas
 
-- La app está pensada para una red doméstica de confianza; **no tiene
-  autenticación**. No la expongas directamente a internet sin agregar
-  autenticación.
+- La app está pensada para ser compartida en un hogar. Ahora incluye cuentas, así
+  que es segura para alojar —pero lee *Alojarla de forma segura* más arriba antes
+  de exponerla a internet (HTTPS, `COOKIE_SECURE` y no dejes `/docs` abierto).
 - Todo es local: tus datos viven únicamente en el archivo de tu base de datos (y
   las búsquedas en línea solo envían el ISBN que escaneas).

@@ -43,6 +43,17 @@ def _inject_i18n(request):
 templates.context_processors.append(_inject_i18n)
 
 
+def _inject_auth(request):
+    """Expose the signed-in account and the CSRF value to every template."""
+    return {
+        "current_user": getattr(request.state, "user", None),
+        "csrf_token": getattr(request.state, "csrf", None),
+    }
+
+
+templates.context_processors.append(_inject_auth)
+
+
 def _format_date(value) -> str:
     if isinstance(value, (datetime, date)):
         return i18n.format_date(value)
