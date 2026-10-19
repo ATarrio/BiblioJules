@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon (Android 8+). The launcher draws the pink gradient
+     background and the book foreground, then masks the result to whatever
+     shape the device uses. The foreground bitmap keeps the mark inside the
+     safe circle, so nothing is clipped.
+
+     Legacy square icons for older Android live in mipmap-*/ic_launcher.png.
+     Both are generated from images/logo.svg (see images/README.md). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

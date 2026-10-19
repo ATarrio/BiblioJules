@@ -7,6 +7,12 @@
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <meta name="description" content="{{ _('A catalog for your home library.') }}">
 
+  <!-- Tab icon, phone icon, and the SVG version modern browsers prefer.
+       Generated from images/logo.svg (see images/README.md). -->
+  <link rel="icon" href="{{ url_for('static', path='img/favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='img/logo.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+
   <!-- Avoid a flash of the wrong theme -->
   <script>
     (function () {
@@ -52,7 +58,7 @@
   <!-- Sidebar -->
   <aside class="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
     <div class="flex h-16 items-center gap-2 px-6">
-      <span class="text-2xl">📚</span>
+      <img src="{{ url_for('static', path='img/logo.svg') }}" alt="" class="h-8 w-8">
       <span class="text-lg font-bold tracking-tight text-slate-900 dark:text-white">{{ app_name }}</span>
     </div>
     <nav class="flex-1 space-y-1 px-3 py-4">
@@ -121,7 +127,7 @@
     <!-- Mobile top bar -->
     <header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white/80 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 lg:hidden">
       <div class="flex items-center gap-2">
-        <span class="text-xl">📚</span>
+        <img src="{{ url_for('static', path='img/logo.svg') }}" alt="" class="h-7 w-7">
         <span class="font-bold text-slate-900 dark:text-white">{{ app_name }}</span>
       </div>
       <div class="flex items-center gap-2">

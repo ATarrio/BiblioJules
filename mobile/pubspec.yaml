@@ -40,3 +40,5 @@ flutter:
     # identically; `dart test`/`flutter test` has a guard that the copies are in
     # sync (see test/locale_sync_test.dart).
     - assets/locales/
+    # The logo/app icon, generated from ../../images/logo.svg (see images/README.md).
+    - assets/images/

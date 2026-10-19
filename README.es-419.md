@@ -14,7 +14,8 @@ de una sola línea.
 
 Alójala una vez y accede desde donde quieras: hay una **app web**, una **app de
 escritorio** nativa (Qt/PySide6) y una **app de Android** nativa (Flutter); las
-tres usan el mismo catálogo protegido con cuentas.
+tres usan el mismo catálogo protegido con cuentas. El teléfono también puede
+guardar una biblioteca propia y funcionar **sin ningún servidor**.
 
 ---
 
@@ -64,6 +65,11 @@ tres usan el mismo catálogo protegido con cuentas.
   detalles —incluida la portada— y un acceso directo para editarlos.
 - **Interfaz moderna y responsiva** con modo oscuro; funciona en teléfono,
   tablet y computadora.
+- **Sin conexión en el teléfono.** La app de Android puede guardar todo el
+  catálogo en un archivo del dispositivo —sin cuenta, sin servidor y sin red— y
+  igual te da el panel, la búsqueda, los filtros, los estantes, los estados y los
+  préstamos. Solo las búsquedas en línea necesitan conexión. Consulta
+  [*App de Android*](#app-de-android-opcional) más abajo.
 - **Interfaz multilingüe.** El inglés es el idioma predeterminado; incluye una
   traducción al español latinoamericano (`es-419`). Cambia el idioma desde la
   barra lateral (web), el selector de idioma (escritorio) o Configuración
@@ -77,8 +83,8 @@ tres usan el mismo catálogo protegido con cuentas.
   escritorio y el teléfono.
 - **Tres interfaces, una biblioteca.** El navegador, una ventana nativa de
   escritorio con modos de base de datos local y remota, y una app nativa de
-  Android que puede guardar su propia biblioteca en el teléfono o comunicarse
-  con una alojada.
+  Android que puede guardar su propia biblioteca en el teléfono (totalmente sin
+  conexión) o comunicarse con una alojada.
 
 ---
 
@@ -272,11 +278,12 @@ También hay una app **nativa de Android** (Flutter) para el teléfono. Funciona
 en dos modos, se elige en la pantalla de inicio de sesión y se cambia cuando
 quieras en **Configuración**:
 
-- **Una biblioteca en este teléfono** — toda la colección vive en un único
-  archivo SQLite en el almacenamiento propio de la app. Sin cuenta, sin servidor
-  y sin red: el panel, la búsqueda, los filtros, los estantes, los estados y los
-  préstamos funcionan en un avión. Solo **Descubrir** y las búsquedas por ISBN
-  necesitan conexión, y le preguntan directamente a Open Library y a Google Books.
+- **Una biblioteca en este teléfono** — el modo *sin conexión*. Toda la colección
+  vive en un único archivo SQLite en el almacenamiento propio de la app: sin
+  cuenta, sin servidor y sin red, así que el panel, la búsqueda, los filtros, los
+  estantes, los estados y los préstamos funcionan en un avión. Solo **Descubrir**
+  y las búsquedas por ISBN necesitan conexión, y le preguntan directamente a Open
+  Library y a Google Books.
 - **Un servidor** — un cliente liviano para una biblioteca *alojada*: no guarda
   base de datos propia, cada pantalla lee y escribe por la API JSON, y un
   préstamo que registres aquí aparece enseguida en el navegador.

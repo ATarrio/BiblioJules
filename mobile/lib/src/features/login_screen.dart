@@ -190,19 +190,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Widget _brand(BuildContext context, L10n l10n) {
-    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: scheme.primary.withValues(alpha: 0.18),
-            shape: BoxShape.circle,
-            border: Border.all(color: scheme.primary.withValues(alpha: 0.5), width: 1.5),
-          ),
-          child: Icon(Icons.local_library_outlined, size: 34, color: scheme.primary),
-        ),
+        // The app mark, generated from images/logo.svg (same art as the
+        // launcher icon).
+        Image.asset('assets/images/logo.png', width: 76, height: 76),
         const SizedBox(height: 16),
         Text(
           kAppName,

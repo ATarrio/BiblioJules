@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Background layer of the adaptive launcher icon: the same pink gradient as
+     images/logo.svg, running from the top-left (light) to the bottom-right
+     (deep). Android must clip a diagonal gradient to a rectangle; the launcher
+     mask takes care of the shape. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#FFB0D0"
+        android:endColor="#EA3D84"
+        android:type="linear" />
+</shape>

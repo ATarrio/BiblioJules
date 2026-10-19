@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from .. import i18n, preferences
 from ..config import settings
 from .main_window import MainWindow
 from .repo import LocalRepo, RemoteRepo, set_repo
-from .theme import apply_theme
+from .theme import LOGO_PNG, apply_theme
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -18,6 +19,10 @@ def run(argv: list[str] | None = None) -> int:
     app.setApplicationName(settings.app_name)
     app.setApplicationDisplayName(settings.app_name)
     app.setOrganizationName(settings.app_name)
+
+    # Window/taskbar icon. The PNG (not the SVG) so every platform and desktop
+    # environment gets a bitmap it recognises.
+    app.setWindowIcon(QIcon(LOGO_PNG))
 
     # Apply the saved UI language before any widget text is built.
     i18n.set_language(preferences.get_preferred_language())

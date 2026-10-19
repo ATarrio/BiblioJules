@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  BiblioJules logo / app icon.
+
+  Made for Inkscape 1.x: everything lives in two named layers ("Background",
+  "Book") and is built from plain editable shapes - rects, paths and
+  gradients. No fonts, no raster images, no clipping masks.
+
+  To get a transparent-background mark, hide or delete the "Background" layer.
+  To recolour, edit the <linearGradient> stops in <defs> (they all share the
+  pink family below) or the fill="" attribute on the matching element.
+
+  Palette
+    tile gradient   #FFB0D0 -> #FA6BA8 -> #EA3D84
+    book cover      #FFFFFF -> #FFEFF7
+    spine           #DC3D80
+    bookmark        #B81C5C
+    drop shadow     #7A0B41
+-->
+<svg
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   version="1.1"
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   id="logo"
+   sodipodi:docname="logo.svg"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25)"
+   role="img"
+   aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">BiblioJules</title>
+  <desc id="logo-desc">A minimalist pink app icon: a white book with a pink spine and a bookmark ribbon, on a rounded pink gradient tile.</desc>
+
+  <sodipodi:namedview
+     id="namedview-logo"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     inkscape:document-units="px"
+     inkscape:pagecheckerboard="false"
+     showgrid="false"
+     inkscape:zoom="1"
+     inkscape:cx="256"
+     inkscape:cy="256"
+     inkscape:current-layer="layer-book" />
+
+  <defs id="defs-logo">
+    <linearGradient
+       id="tileFill"
+       x1="70"
+       y1="20"
+       x2="450"
+       y2="500"
+       gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFB0D0" id="stop-tile-light" />
+      <stop offset="0.5" stop-color="#FA6BA8" id="stop-tile-mid" />
+      <stop offset="1" stop-color="#EA3D84" id="stop-tile-deep" />
+    </linearGradient>
+
+    <radialGradient
+       id="tileSheen"
+       cx="0.3"
+       cy="0.2"
+       r="0.85"
+       fx="0.26"
+       fy="0.16">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35" id="stop-sheen-light" />
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.06" id="stop-sheen-mid" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" id="stop-sheen-clear" />
+    </radialGradient>
+
+    <linearGradient
+       id="coverFill"
+       x1="130"
+       y1="63"
+       x2="382"
+       y2="379"
+       gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" id="stop-cover-light" />
+      <stop offset="1" stop-color="#FFEFF7" id="stop-cover-tint" />
+    </linearGradient>
+
+    <filter
+       id="softShadow"
+       x="-30%"
+       y="-30%"
+       width="160%"
+       height="160%"
+       color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" />
+    </filter>
+  </defs>
+
+  <g inkscape:groupmode="layer" id="layer-background" inkscape:label="Background">
+    <rect
+       x="0"
+       y="0"
+       width="512"
+       height="512"
+       rx="116"
+       ry="116"
+       id="tile"
+       fill="url(#tileFill)" />
+    <rect
+       x="0"
+       y="0"
+       width="512"
+       height="512"
+       rx="116"
+       ry="116"
+       id="tile-sheen"
+       fill="url(#tileSheen)" />
+  </g>
+
+  <g inkscape:groupmode="layer" id="layer-book" inkscape:label="Book">
+    <g id="book-shadow" opacity="0.3" fill="#7A0B41" filter="url(#softShadow)">
+      <rect x="138" y="73" width="252" height="316" rx="20" ry="20" id="shadow-cover" />
+      <rect x="246" y="405" width="36" height="60" rx="10" ry="10" id="shadow-ribbon" />
+    </g>
+
+    <path
+       id="bookmark-ribbon"
+       d="M 238,290 H 274 V 449 L 256,427 L 238,449 Z"
+       fill="#B81C5C" />
+
+    <rect
+       x="130"
+       y="63"
+       width="252"
+       height="316"
+       rx="20"
+       ry="20"
+       id="book-cover"
+       fill="url(#coverFill)" />
+
+    <path
+       id="book-spine"
+       d="M 182,63 H 150 Q 130,63 130,83 V 359 Q 130,379 150,379 H 182 Z"
+       fill="#DC3D80" />
+  </g>
+</svg>

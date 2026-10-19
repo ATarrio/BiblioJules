@@ -16,6 +16,8 @@ from PySide6.QtWidgets import QApplication
 _ASSETS = Path(__file__).resolve().parent / "assets"
 CHECK_ICON = (_ASSETS / "check.svg").as_posix()
 CHEVRON_ICON = (_ASSETS / "chevron.svg").as_posix()
+LOGO_SVG = (_ASSETS / "logo.svg").as_posix()
+LOGO_PNG = (_ASSETS / "logo.png").as_posix()
 
 # --- Palette (Tailwind slate + the web app's brand blue) ------------------- #
 SLATE_950 = "#020617"
@@ -68,7 +70,7 @@ QWidget#Sidebar {{
     background-color: {SLATE_900};
     border-right: 1px solid {SLATE_800};
 }}
-QLabel#BrandEmoji {{ font-size: 22px; background: transparent; }}
+QLabel#BrandLogo {{ background: transparent; }}
 QLabel#BrandTitle {{
     color: {WHITE};
     font-size: 17px;

@@ -7,17 +7,17 @@ you like in **Settings**:
 
 ```
 📱 a library on this phone  ──▶  🗄️ one SQLite file, private to the app
-     (no account, no network)
+     (offline: no account, no server)
 
 📱 a server                ──HTTPS──▶  🌐 BiblioJules server  ──▶  🗄️ database
      (the web app + JSON API)
 ```
 
-- **A library on this phone** — the whole collection lives in a single SQLite
-  file in the app's own storage. No account, no server, no network: dashboard,
-  search, filters, shelves, statuses and lending all work on a plane. Only
-  **Discover** and ISBN lookups need a connection, and they ask Open Library and
-  Google Books directly.
+- **A library on this phone** — the *offline* mode: the whole collection lives in
+  a single SQLite file in the app's own storage. No account, no server, no
+  network: dashboard, search, filters, shelves, statuses and lending all work on
+  a plane. Only **Discover** and ISBN lookups need a connection, and they ask
+  Open Library and Google Books directly.
 - **A server** — a thin client for a hosted library: no database of its own,
   every screen reads and writes through the same JSON API the web and desktop
   apps use, so a loan you record here shows up in the browser immediately.
@@ -78,7 +78,20 @@ flutter build apk --split-per-abi --debug     # no signing needed
 universal build, and the right way to hand the app to a phone. The output lands
 in `build/app/outputs/flutter-apk/`.
 
+Release builds are minified by R8, which Flutter turns on for them. Anything a
+plugin only reaches *by name* has to be kept explicitly, so
+`android/app/proguard-rules.pro` holds those keep rules. Today they are the
+Kotlin runtime classes that the JNI bindings of `shared_preferences_android` and
+`path_provider_android` look up: without them R8 renames the classes, the
+descriptors the Dart side calls stop existing, and the app dies before the first
+frame — an endless black screen that only ever happens in release
+(<https://github.com/flutter/flutter/issues/194649>). The rules can be dropped
+once `jni` keeps those classes itself.
+
 ### Using a library on this phone
+
+The phone works **offline** in this mode: nothing here needs a network, an
+account, or a server anywhere.
 
 On the sign-in screen, tap **Use a library on this phone** and give it a name.
 That is the whole setup: the app creates the file, seeds the six standard

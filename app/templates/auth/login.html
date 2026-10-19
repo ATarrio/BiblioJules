@@ -6,6 +6,11 @@
   <title>{{ _('Sign in') }} · {{ app_name }}</title>
   <meta name="description" content="{{ _('A catalog for your home library.') }}">
 
+  <!-- Same icons as base.html — this page is rendered on its own -->
+  <link rel="icon" href="{{ url_for('static', path='img/favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='img/logo.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+
   <script>
     (function () {
       const stored = localStorage.getItem('theme');
@@ -43,7 +48,7 @@
 <div class="flex flex-1 items-center justify-center px-4 py-12">
   <div class="w-full max-w-sm">
     <div class="mb-6 flex flex-col items-center text-center">
-      <span class="text-4xl">📚</span>
+      <img src="{{ url_for('static', path='img/logo.svg') }}" alt="" class="h-16 w-16">
       <h1 class="mt-2 text-xl font-bold tracking-tight text-slate-900 dark:text-white">{{ app_name }}</h1>
       <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Sign in to your library') }}</p>
     </div>

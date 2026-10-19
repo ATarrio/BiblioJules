@@ -13,7 +13,8 @@ SQLite by default, but the database layer is fully abstracted so switching to
 
 Host it once and reach it from anywhere: there is a **web app**, a native
 **desktop app** (Qt/PySide6) and a native **Android app** (Flutter) — all three
-talk to the same account-protected catalog.
+talk to the same account-protected catalog. The phone can also keep a library of
+its own and work with **no server at all**.
 
 ---
 
@@ -57,6 +58,10 @@ talk to the same account-protected catalog.
   app) for a pop-up with its full details — cover included — plus a one-click
   shortcut to edit them.
 - **Sleek & responsive** UI with dark mode, works on phone, tablet and desktop.
+- **Offline on the phone.** The Android app can hold the entire catalogue in a
+  file on the device — no account, no server, no network — and still give you the
+  dashboard, search, filters, shelves, statuses and lending. Only the online
+  lookups need a connection. See [*Android app*](#android-app-optional) below.
 - **Multilingual UI.** English is the default; a Latin American Spanish
   (`es-419`) translation ships alongside. Switch language from the sidebar (web),
   the language picker (desktop) or Settings (Android) — the choice is
@@ -69,7 +74,7 @@ talk to the same account-protected catalog.
   can be hosted and reached from the web, desktop and phone.
 - **Three front-ends, one library.** Browser, a native desktop window with
   local-database and remote modes, and a native Android app that can keep its
-  own library on the phone or talk to a hosted one.
+  own library on the phone (fully offline) or talk to a hosted one.
 
 ---
 
@@ -252,11 +257,11 @@ There is also a native **Android** app (Flutter) for the phone in your pocket.
 It runs in either of two modes, picked on the sign-in screen and changed
 whenever you like in **Settings**:
 
-- **A library on this phone** — the whole collection lives in a single SQLite
-  file in the app's own storage. No account, no server, no network: dashboard,
-  search, filters, shelves, statuses and lending all work on a plane. Only
-  **Discover** and ISBN lookups need a connection, and they ask Open Library and
-  Google Books directly.
+- **A library on this phone** — the *offline* mode. The whole collection lives in
+  a single SQLite file in the app's own storage: no account, no server, no
+  network, so the dashboard, search, filters, shelves, statuses and lending all
+  work on a plane. Only **Discover** and ISBN lookups need a connection, and they
+  ask Open Library and Google Books directly.
 - **A server** — a thin client for a hosted library: no database of its own,
   every screen reads and writes through the JSON API, and a loan recorded here
   shows up in the browser immediately.

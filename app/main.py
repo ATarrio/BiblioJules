@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -79,6 +79,12 @@ def create_app() -> FastAPI:
         )
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    # Browsers ask for /favicon.ico even when base.html points at an icon, so
+    # serve the generated file instead of a 404. Public like /static.
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        return FileResponse(STATIC_DIR / "img" / "favicon.ico")
 
     # Public first: health, login/logout and the language switcher. Then every
     # other router behind the appropriate guard. The JSON API authenticates with

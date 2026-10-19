@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -28,6 +28,7 @@ from .locations_view import LocationsView
 from .repo import AuthError, LocalRepo, RemoteRepo, RepoError, current_repo, set_repo
 from .settings_dialog import SettingsDialog
 from .statuses_view import StatusesView
+from .theme import LOGO_SVG
 
 # (emoji, English source label) — order mirrors the web app's sidebar.
 # Labels are translated when the UI is built, so a language switch can rebuild it.
@@ -64,11 +65,13 @@ class MainWindow(QMainWindow):
         brand_layout = QHBoxLayout(brand)
         brand_layout.setContentsMargins(20, 18, 20, 12)
         brand_layout.setSpacing(8)
-        emoji_label = QLabel("📚")
-        emoji_label.setObjectName("BrandEmoji")
+        logo_label = QLabel()
+        logo_label.setObjectName("BrandLogo")
+        # Rendered from the SVG at the label's size, so it stays sharp on HiDPI.
+        logo_label.setPixmap(QIcon(LOGO_SVG).pixmap(26, 26))
         title_label = QLabel(settings.app_name)
         title_label.setObjectName("BrandTitle")
-        brand_layout.addWidget(emoji_label)
+        brand_layout.addWidget(logo_label)
         brand_layout.addWidget(title_label)
         brand_layout.addStretch(1)
 
