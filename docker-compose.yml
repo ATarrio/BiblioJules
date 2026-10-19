@@ -1,0 +1,71 @@
+# BiblioJules with Docker Compose.
+#
+#   docker compose up -d --build
+#   docker compose run --rm web python -m app.cli create-admin <username>
+#
+# Then open http://localhost:8000 and sign in with the account you just made.
+#
+# Your library lives in the `bibliojules-data` volume, so rebuilding or
+# replacing the container never touches it. To back it up, copy that volume out:
+#
+#   docker compose exec web python -c "import sqlite3; sqlite3.connect('/app/data/library.db').backup(sqlite3.connect('/app/data/backup.db'))"
+#   docker compose cp web:/app/data/backup.db ./library-backup.db
+#
+# See "Deploy with Docker" in README.md for HTTPS and PostgreSQL notes.
+
+services:
+  web:
+    build: .
+    image: bibliojules:latest
+    restart: unless-stopped
+    # Passes signals straight to uvicorn, so `docker compose down` is a clean
+    # shutdown rather than a wait for the timeout.
+    init: true
+    ports:
+      - "8000:8000"
+    environment:
+      # --- Storage ---------------------------------------------------------
+      # SQLite on the named volume below. To use PostgreSQL instead, replace
+      # this with e.g. postgresql+psycopg://user:password@db:5432/bibliojules
+      # (the desktop client's local mode keeps using its own file).
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/library.db}
+      # --- Behaviour -------------------------------------------------------
+      # Open Library asks callers to identify themselves.
+      APP_CONTACT: ${APP_CONTACT:-bibliophile@example.com}
+      # How many days a sign-in lasts before it must be repeated.
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      # Send the session cookie over HTTPS only. Turn this on *after* the app
+      # is behind a TLS reverse proxy, or nobody will be able to sign in.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # The interactive API docs. Handy while setting up; consider "false" on a
+      # public instance.
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+      # Only needed if a *browser* app on another origin calls the JSON API.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    volumes:
+      - bibliojules-data:/app/data
+
+  # --- Optional: automatic HTTPS ------------------------------------------
+  # Caddy fetches a certificate for you (the domain must already point at this
+  # machine) and forwards to the app. Uncomment the block, set the domain, then:
+  #
+  #   COOKIE_SECURE=true docker compose --profile tls up -d
+  #
+  # and stop publishing port 8000 to the outside world.
+  #
+  # caddy:
+  #   image: caddy:2-alpine
+  #   profiles: ["tls"]
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   command: caddy reverse-proxy --from library.example.com --to web:8000
+  #   volumes:
+  #     - caddy-data:/data
+  #     - caddy-config:/config
+
+volumes:
+  bibliojules-data:
+  # caddy-data:
+  # caddy-config:

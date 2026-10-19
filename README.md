@@ -11,6 +11,10 @@ Built with **FastAPI + SQLAlchemy + Jinja2 + HTMX + Alpine.js + Tailwind CSS**.
 SQLite by default, but the database layer is fully abstracted so switching to
 **PostgreSQL or MariaDB** later is a one-line change.
 
+Host it once and reach it from anywhere: there is a **web app**, a native
+**desktop app** (Qt/PySide6) and a native **Android app** (Flutter) — all three
+talk to the same account-protected catalog.
+
 ---
 
 ## Features
@@ -54,14 +58,17 @@ SQLite by default, but the database layer is fully abstracted so switching to
   shortcut to edit them.
 - **Sleek & responsive** UI with dark mode, works on phone, tablet and desktop.
 - **Multilingual UI.** English is the default; a Latin American Spanish
-  (`es-419`) translation ships alongside. Switch language from the sidebar (web)
-  or the language picker (desktop) — the choice is remembered. Adding another
-  language only means dropping a `app/locales/<code>.json` file (see below).
-- **JSON API** (`/api/...`) and interactive API docs at `/docs`, so a future
-  mobile app or SPA can reuse the same backend.
+  (`es-419`) translation ships alongside. Switch language from the sidebar (web),
+  the language picker (desktop) or Settings (Android) — the choice is
+  remembered. Adding another language only means dropping an
+  `app/locales/<code>.json` file (see below).
+- **JSON API** (`/api/...`) and interactive API docs at `/docs`. The desktop app
+  (remote mode) and the Android app are built on it.
 - **Accounts & a shared catalog.** Username/password sign-in, with an admin
   panel to add or remove people. Everyone shares the same shelves, so the app
   can be hosted and reached from the web, desktop and phone.
+- **Three front-ends, one library.** Browser, a native desktop window with
+  local-database and remote modes, and a native Android app for the phone.
 
 ---
 
@@ -126,6 +133,67 @@ If you expose the app beyond your home network:
 
 ---
 
+## Deploy with Docker
+
+A `Dockerfile` and a `docker-compose.yml` are included, so a hosted instance —
+the web app *and* the JSON API the desktop and Android apps talk to — is:
+
+```bash
+docker compose up -d --build
+docker compose run --rm web python -m app.cli create-admin alice
+```
+
+Then open <http://localhost:8000> and sign in. Your library lives in the
+`bibliojules-data` volume, so rebuilding, replacing or upgrading the container
+never touches it. The image runs as an unprivileged user and ships a
+`HEALTHCHECK` that asks `/health`, which reports `503` when the database is
+unreachable.
+
+Worth choosing before you expose it (set them in `docker-compose.yml`, or in a
+`.env` file next to it — compose reads `${VAR}` from there):
+
+| Setting | Why |
+| --- | --- |
+| `APP_CONTACT` | Open Library asks callers to identify themselves |
+| `COOKIE_SECURE=true` | send the session cookie over HTTPS only |
+| `ENABLE_DOCS=false` | hide `/docs` on a public instance |
+| `SESSION_TTL_DAYS` | how long a sign-in lasts (30 by default) |
+
+**HTTPS.** Terminate TLS in front of the app. The compose file has a
+ready-to-uncomment **Caddy** service that fetches a certificate for you:
+
+```bash
+# 1. point library.example.com at this machine
+# 2. uncomment the `caddy` service in docker-compose.yml
+COOKIE_SECURE=true docker compose --profile tls up -d
+```
+
+Once that works, stop publishing port `8000` to the outside world — Caddy reaches
+the app over the compose network. Any other reverse proxy (nginx, Traefik, one
+you already run) is the same idea: forward to `web:8000` and set
+`COOKIE_SECURE=true`.
+
+**Backups.** Everything is in one volume, and SQLite has a safe online-backup
+call, so no downtime is needed:
+
+```bash
+docker compose exec web python -c "import sqlite3; sqlite3.connect('/app/data/library.db').backup(sqlite3.connect('/app/data/backup.db'))"
+docker compose cp web:/app/data/backup.db ./library-backup.db
+```
+
+**PostgreSQL or MariaDB instead of SQLite.** Set `DATABASE_URL` (e.g.
+`postgresql+psycopg://user:password@db:5432/bibliojules`), add the matching
+driver to `requirements.txt` (`psycopg[binary]` or `pymysql`), and add the
+database service to the compose file. Nothing else in the codebase changes.
+
+**Managing the instance.** The image ships the same admin CLI, so accounts can be
+handled inside the container — `docker compose exec web python -m app.cli
+list-users`, `set-password alice`, `create-user bob` — and Alembic is available
+for schema changes (see *Evolving the schema with Alembic* for the one-time
+`alembic stamp head` an existing library needs).
+
+---
+
 ## Desktop app (optional, no browser)
 
 There is also a native **Qt (PySide6)** desktop front-end for when you'd rather
@@ -174,6 +242,38 @@ launch from, so prefer an absolute path there.
 Either way the choice is written to `data/preferences.json`. In remote mode that
 file also holds the sign-in token, so it is created with `0600` permissions —
 keep it out of version control (`data/` already is).
+
+---
+
+## Android app (optional)
+
+There is also a native **Android** app (Flutter) for the phone in your pocket.
+It is a thin client for a *hosted* library: it keeps **no database at all**, so
+it always needs the address of a running BiblioJules server and an account on
+it. Point it at the server, sign in once, and the token is kept in the Android
+keystore.
+
+```bash
+cd mobile
+flutter pub get
+flutter run --release      # or: flutter build apk
+```
+
+The app has the same features as the web and desktop front-ends — dashboard,
+searchable/filterable catalog, ISBN scanning, locations, statuses, lending,
+loans history, online discovery — everything except user management, which
+stays admin-only on the web.
+
+- **Emulator:** use `http://10.0.2.2:8000` as the backend URL to reach a server
+  on the host machine.
+- **Phone:** use the computer's LAN address (`http://192.168.1.20:8000`) or a
+  hosted instance over **HTTPS**.
+- **Release builds only allow HTTPS.** Cleartext HTTP is enabled for debug
+  builds alone, so you can develop against a local server without weakening the
+  real app.
+
+Requires the **Flutter 3.47+ SDK** plus the Android SDK; no Python, no database.
+See [`mobile/README.md`](mobile/README.md) for details.
 
 ---
 
@@ -234,6 +334,19 @@ keep it out of version control (`data/` already is).
 │       ├── dialogs.py     #   add/edit book, lend, location, status dialogs
 │       ├── db.py  workers.py  util.py
 │       └── ...
+├── mobile/                # Flutter Android app (a thin client, no local DB)
+│   ├── lib/
+│   │   ├── main.dart      #   load prefs + catalogues + token, then run
+│   │   └── src/
+│   │       ├── app.dart   #   router + sign-in guard
+│   │       ├── core/      #   api client, providers, models, l10n
+│   │       ├── widgets/   #   app bar, book tile, form fields…
+│   │       └── features/  #   one file per screen
+│   ├── assets/locales/    #   copies of the server's catalogues
+│   └── test/
+├── Dockerfile             # Container image for the web app + JSON API
+├── docker-compose.yml     # One-command deploy (library lives in a volume)
+├── .dockerignore
 ├── migrations/            # Alembic migrations (schema evolution)
 ├── run.py                 # Web launcher
 ├── desktop.py             # Desktop launcher
@@ -296,11 +409,24 @@ initial migration is included.
 > Alembic when a change is more involved (renames, type changes, dropped
 > columns).
 
+A database the app created has every table but no `alembic_version` row, so the
+first Alembic run must be told that the schema already *is* the initial
+migration. Do this once per existing library:
+
+```bash
+alembic stamp head                                # once, on a database the app created
+```
+
+From then on (and on a brand-new database, where no stamp is needed):
+
 ```bash
 alembic upgrade head                              # apply migrations
 alembic revision --autogenerate -m "my change"    # after editing models
 alembic upgrade head
 ```
+
+Skipping the stamp is what produces `table authors already exists` on an
+existing library.
 
 ---
 

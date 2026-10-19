@@ -1,0 +1,29 @@
+# Keep a real library and local secrets out of the image.
+data/
+.env
+
+# Python build leftovers and virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Version control and editors.
+.git/
+.gitattributes
+.gitignore
+.idea/
+.vscode/
+*.swp
+
+# The Android app has its own build pipeline; it is not part of the server.
+mobile/
+
+# Desktop-only and documentation files.
+desktop.py
+requirements-desktop.txt
+*.md
+tests/

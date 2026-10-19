@@ -12,6 +12,10 @@ CSS**. SQLite por defecto, pero la capa de base de datos está totalmente
 abstraída, así que cambiar a **PostgreSQL o MariaDB** más adelante es un cambio
 de una sola línea.
 
+Alójala una vez y accede desde donde quieras: hay una **app web**, una **app de
+escritorio** nativa (Qt/PySide6) y una **app de Android** nativa (Flutter); las
+tres usan el mismo catálogo protegido con cuentas.
+
 ---
 
 ## Funciones
@@ -62,15 +66,18 @@ de una sola línea.
   tablet y computadora.
 - **Interfaz multilingüe.** El inglés es el idioma predeterminado; incluye una
   traducción al español latinoamericano (`es-419`). Cambia el idioma desde la
-  barra lateral (web) o el selector de idioma (escritorio): la elección se
-  recuerda. Agregar otro idioma solo requiere colocar un archivo
-  `app/locales/<code>.json` (ver más abajo).
-- **API JSON** (`/api/...`) y documentación interactiva en `/docs`, para que una
-  futura app móvil o SPA pueda reutilizar el mismo backend.
+  barra lateral (web), el selector de idioma (escritorio) o Configuración
+  (Android): la elección se recuerda. Agregar otro idioma solo requiere colocar
+  un archivo `app/locales/<code>.json` (ver más abajo).
+- **API JSON** (`/api/...`) y documentación interactiva en `/docs`. La app de
+  escritorio (modo remoto) y la app de Android están construidas sobre ella.
 - **Cuentas y catálogo compartido.** Inicio de sesión con usuario y contraseña, y
   un panel de administración para agregar o quitar personas. Todos comparten los
   mismos estantes, así que la app puede alojarse y usarse desde la web, el
   escritorio y el teléfono.
+- **Tres interfaces, una biblioteca.** El navegador, una ventana nativa de
+  escritorio con modos de base de datos local y remota, y una app nativa de
+  Android para el teléfono.
 
 ---
 
@@ -141,6 +148,68 @@ Si expones la app más allá de tu red doméstica:
 
 ---
 
+## Desplegar con Docker
+
+El repositorio incluye un `Dockerfile` y un `docker-compose.yml`, así que una
+instancia alojada —la app web *y* la API JSON que usan las apps de escritorio y
+de Android— se levanta con:
+
+```bash
+docker compose up -d --build
+docker compose run --rm web python -m app.cli create-admin alice
+```
+
+Luego abre <http://localhost:8000> e inicia sesión. Tu biblioteca vive en el
+volumen `bibliojules-data`, así que reconstruir, reemplazar o actualizar el
+contenedor nunca la toca. La imagen se ejecuta con un usuario sin privilegios e
+incluye un `HEALTHCHECK` que consulta `/health`, el cual responde `503` cuando la
+base de datos es inalcanzable.
+
+Conviene decidir esto antes de exponerla (defínelo en `docker-compose.yml` o en
+un archivo `.env` junto a él —compose lee `${VAR}` desde allí):
+
+| Ajuste | Por qué |
+| --- | --- |
+| `APP_CONTACT` | Open Library pide que los clientes se identifiquen |
+| `COOKIE_SECURE=true` | enviar la cookie de sesión solo por HTTPS |
+| `ENABLE_DOCS=false` | ocultar `/docs` en una instancia pública |
+| `SESSION_TTL_DAYS` | cuánto dura una sesión (30 por defecto) |
+
+**HTTPS.** Termina el TLS delante de la app. El archivo de compose trae un
+servicio **Caddy** listo para descomentar, que obtiene el certificado por ti:
+
+```bash
+# 1. apunta library.example.com a esta máquina
+# 2. descomenta el servicio `caddy` en docker-compose.yml
+COOKIE_SECURE=true docker compose --profile tls up -d
+```
+
+Cuando eso funcione, deja de publicar el puerto `8000` hacia afuera: Caddy llega
+a la app por la red de compose. Cualquier otro proxy inverso (nginx, Traefik, uno
+que ya uses) es la misma idea: redirige a `web:8000` y define
+`COOKIE_SECURE=true`.
+
+**Copias de seguridad.** Todo está en un solo volumen, y SQLite tiene una llamada
+de respaldo en caliente, así que no hace falta detener nada:
+
+```bash
+docker compose exec web python -c "import sqlite3; sqlite3.connect('/app/data/library.db').backup(sqlite3.connect('/app/data/backup.db'))"
+docker compose cp web:/app/data/backup.db ./library-backup.db
+```
+
+**PostgreSQL o MariaDB en lugar de SQLite.** Define `DATABASE_URL` (por ejemplo
+`postgresql+psycopg://user:password@db:5432/bibliojules`), agrega el controlador
+correspondiente a `requirements.txt` (`psycopg[binary]` o `pymysql`) y añade el
+servicio de base de datos al archivo de compose. Nada más cambia en el código.
+
+**Administrar la instancia.** La imagen incluye la misma CLI de administración,
+así que las cuentas se manejan dentro del contenedor — `docker compose exec web
+python -m app.cli list-users`, `set-password alice`, `create-user bob` — y
+Alembic está disponible para cambios de esquema (mira *Evolucionar el esquema
+con Alembic* para el `alembic stamp head` que necesita una biblioteca existente).
+
+---
+
 ## App de escritorio (opcional, sin navegador)
 
 También hay una interfaz nativa de escritorio en **Qt (PySide6)** para cuando
@@ -193,6 +262,39 @@ ruta absoluta.
 En cualquier caso, la elección se guarda en `data/preferences.json`. En modo
 remoto ese archivo también contiene el token de sesión, por lo que se crea con
 permisos `0600`: mantenlo fuera del control de versiones (`data/` ya lo está).
+
+---
+
+## App de Android (opcional)
+
+También hay una app **nativa de Android** (Flutter) para el teléfono. Es un
+cliente liviano para una biblioteca *alojada*: no guarda **ninguna base de datos
+propia**, así que siempre necesita la dirección de un servidor BiblioJules en
+funcionamiento y una cuenta en él. Apúntala al servidor, inicia sesión una vez y
+el token queda guardado en el *keystore* de Android.
+
+```bash
+cd mobile
+flutter pub get
+flutter run --release      # o bien: flutter build apk
+```
+
+La app tiene las mismas funciones que las versiones web y de escritorio —panel,
+catálogo con búsqueda y filtros, escaneo de ISBN, ubicaciones, estados,
+préstamos, historial de préstamos y búsqueda en línea—, todo menos la gestión de
+usuarios, que sigue siendo exclusiva del administrador en la web.
+
+- **Emulador:** usa `http://10.0.2.2:8000` como URL del servidor para llegar a un
+  servidor que corre en la computadora anfitriona.
+- **Teléfono:** usa la dirección en la red local de tu computadora
+  (`http://192.168.1.20:8000`) o una instancia alojada con **HTTPS**.
+- **Las compilaciones de publicación solo permiten HTTPS.** El HTTP sin cifrar
+  está habilitado únicamente para las compilaciones de depuración, así puedes
+  desarrollar contra un servidor local sin debilitar la app real.
+
+Requiere el **SDK de Flutter 3.47+** y el SDK de Android; no necesita Python ni
+base de datos. Consulta [`mobile/README.md`](mobile/README.md) para más
+detalles.
 
 ---
 
@@ -255,6 +357,19 @@ permisos `0600`: mantenlo fuera del control de versiones (`data/` ya lo está).
 │       ├── dialogs.py     #   diálogos de alta/edición de libro, préstamo, ubicación, estado
 │       ├── db.py  workers.py  util.py
 │       └── ...
+├── mobile/                # App de Android con Flutter (cliente liviano, sin base local)
+│   ├── lib/
+│   │   ├── main.dart      #   carga preferencias + catálogos + token y arranca
+│   │   └── src/
+│   │       ├── app.dart   #   router + guarda de inicio de sesión
+│   │       ├── core/      #   cliente de API, providers, modelos, l10n
+│   │       ├── widgets/   #   barra superior, tarjeta de libro, campos…
+│   │       └── features/  #   un archivo por pantalla
+│   ├── assets/locales/    #   copias de los catálogos del servidor
+│   └── test/
+├── Dockerfile             # Imagen del contenedor para la web + API JSON
+├── docker-compose.yml     # Despliegue en un comando (la biblioteca vive en un volumen)
+├── .dockerignore
 ├── migrations/            # Migraciones de Alembic (evolución del esquema)
 ├── run.py                 # Lanzador web
 ├── desktop.py             # Lanzador de escritorio
@@ -321,11 +436,25 @@ migración inicial.
 > Alembic cuando el cambio sea más complejo (renombres, cambios de tipo,
 > columnas eliminadas).
 
+Una base de datos que creó la app tiene todas las tablas pero ninguna fila en
+`alembic_version`, así que la primera ejecución de Alembic debe saber que el
+esquema existente *ya es* la migración inicial. Hazlo una sola vez por cada
+biblioteca existente:
+
+```bash
+alembic stamp head                                # una vez, sobre una base creada por la app
+```
+
+A partir de ahí (y en una base nueva, donde no hace falta el sello):
+
 ```bash
 alembic upgrade head                              # aplica las migraciones
 alembic revision --autogenerate -m "my change"    # después de editar los modelos
 alembic upgrade head
 ```
+
+Omitir el sello es lo que produce «table authors already exists» en una
+biblioteca existente.
 
 ---
 
