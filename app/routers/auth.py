@@ -101,12 +101,17 @@ def login_form(
         return RedirectResponse(next_url, status_code=303)
 
     csrf = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    # Templates read `csrf_token` from the shared context processor in
+    # app/templating.py, which is fed from request.state. Starlette applies
+    # context processors *after* the context dict below, so a token passed
+    # there would be overwritten — publish it on the request instead, so the
+    # hidden field always matches the cookie we set.
+    request.state.csrf = csrf
     response = templates.TemplateResponse(
         request,
         "auth/login.html",
         {
             "next": next_url,
-            "csrf_token": csrf,
             "setup_needed": auth.count_users(db) == 0,
             "username": "",
             "error": None,
@@ -160,12 +165,14 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 def _login_error(db, request, username, next_url, message):
     csrf = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+    # As in login_form(): the template takes csrf_token from request.state, so
+    # a failed attempt re-renders a form that can actually be submitted again.
+    request.state.csrf = csrf
     response = templates.TemplateResponse(
         request,
         "auth/login.html",
         {
             "next": next_url,
-            "csrf_token": csrf,
             "setup_needed": auth.count_users(db) == 0,
             "username": username,
             "error": message,

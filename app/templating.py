@@ -45,10 +45,15 @@ templates.context_processors.append(_inject_i18n)
 
 def _inject_auth(request):
     """Expose the signed-in account and the CSRF value to every template."""
-    return {
-        "current_user": getattr(request.state, "user", None),
-        "csrf_token": getattr(request.state, "csrf", None),
-    }
+    data = {"current_user": getattr(request.state, "user", None)}
+    # A context processor runs *after* the context a route passes, so returning
+    # `csrf_token: None` here would silently blank a token the route supplied
+    # (which is exactly how the login form once shipped `value="None"`). Only
+    # provide the key when there is a value to provide.
+    csrf = getattr(request.state, "csrf", None)
+    if csrf:
+        data["csrf_token"] = csrf
+    return data
 
 
 templates.context_processors.append(_inject_auth)
