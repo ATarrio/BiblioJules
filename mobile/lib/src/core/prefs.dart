@@ -35,6 +35,9 @@ class AppPrefs {
   static const _kMode = 'library_mode';
   static const _kLocalLibrary = 'local_library_name';
   static const _kColorTheme = 'color_theme';
+  static const _kSyncFolder = 'sync_folder_uri';
+  static const _kSyncFolderName = 'sync_folder_name';
+  static const _kSyncOnStart = 'sync_on_start';
 
   static Future<AppPrefs> load() async {
     return AppPrefs(await SharedPreferences.getInstance());
@@ -103,6 +106,46 @@ class AppPrefs {
 
   Future<void> setColorTheme(String slug) async {
     await _prefs.setString(_kColorTheme, normalizeThemeSlug(slug));
+  }
+
+  /// The folder snapshots are exchanged through, as an Android tree URI.
+  ///
+  /// Only the local library syncs this way; the hosted server has its own
+  /// folder, managed from its admin page.
+  String? get syncFolderUri {
+    final value = _prefs.getString(_kSyncFolder);
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  /// What that folder is called, so the settings screen can name it.
+  String? get syncFolderName {
+    final value = _prefs.getString(_kSyncFolderName);
+    return (value == null || value.trim().isEmpty) ? null : value;
+  }
+
+  Future<void> setSyncFolder(String? uri, {String? name}) async {
+    if (uri == null || uri.isEmpty) {
+      await _prefs.remove(_kSyncFolder);
+      await _prefs.remove(_kSyncFolderName);
+      return;
+    }
+    await _prefs.setString(_kSyncFolder, uri);
+    if (name == null || name.trim().isEmpty) {
+      await _prefs.remove(_kSyncFolderName);
+    } else {
+      await _prefs.setString(_kSyncFolderName, name.trim());
+    }
+  }
+
+  /// Whether a sync runs once when the app starts.
+  bool get syncOnStart => _prefs.getBool(_kSyncOnStart) ?? false;
+
+  Future<void> setSyncOnStart(bool value) async {
+    if (value) {
+      await _prefs.setBool(_kSyncOnStart, true);
+      return;
+    }
+    await _prefs.remove(_kSyncOnStart);
   }
 
   /// The username to prefill on the sign-in screen.

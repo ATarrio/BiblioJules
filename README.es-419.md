@@ -86,6 +86,13 @@ guardar una biblioteca propia y funcionar **sin ningún servidor**.
   escritorio con modos de base de datos local y remota, y una app nativa de
   Android que puede guardar su propia biblioteca en el teléfono (totalmente sin
   conexión) o comunicarse con una alojada.
+- **Comparte esa biblioteca entre dispositivos, sin servidor.** Apunta la página
+  de administración web, la app de escritorio y la app de Android a la misma
+  carpeta —Google Drive, Dropbox, Syncthing, un pendrive— y todas intercambian
+  instantáneas de la biblioteca: gana la edición más reciente de cada fila, las
+  eliminaciones también viajan, y en la carpeta nunca aterriza nada que no sean
+  archivos completos. Ver [*La misma biblioteca en todos los
+  dispositivos*](#la-misma-biblioteca-en-todos-los-dispositivos-opcional-sin-servidor).
 
 ---
 
@@ -182,6 +189,8 @@ un archivo `.env` junto a él —compose lee `${VAR}` desde allí):
 | `COOKIE_SECURE=true` | enviar la cookie de sesión solo por HTTPS |
 | `ENABLE_DOCS=false` | ocultar `/docs` en una instancia pública |
 | `SESSION_TTL_DAYS` | cuánto dura una sesión (30 por defecto) |
+| `SYNC_FILE` | la carpeta compartida por la que esta instancia intercambia instantáneas (ver [*La misma biblioteca en todos los dispositivos*](#la-misma-biblioteca-en-todos-los-dispositivos-opcional-sin-servidor)) |
+| `SYNC_ON_START=true` | sincronizar una vez al iniciar la aplicación |
 
 **HTTPS.** Termina el TLS delante de la app. El archivo de compose trae un
 servicio **Caddy** listo para descomentar, que obtiene el certificado por ti:
@@ -260,6 +269,14 @@ El botón al pie de la barra lateral siempre muestra de dónde vienen los datos 
 base de datos local, o la cuenta con la que iniciaste sesión) y vuelve a abrir el
 diálogo de configuración al hacerle clic.
 
+En **modo local** ese diálogo también tiene un grupo *Biblioteca compartida*:
+apúntalo a una carpeta que se sincronice sola (Google Drive, Syncthing, un
+pendrive) y mantendrá el escritorio, el navegador y tu teléfono en la misma
+biblioteca — ver [*La misma biblioteca en todos los
+dispositivos*](#la-misma-biblioteca-en-todos-los-dispositivos-opcional-sin-servidor).
+**Archivo → Sincronizar la biblioteca ahora…** (`Ctrl+Shift+S`) sincroniza a
+pedido, y *Sincronizar al iniciar la aplicación* lo hace al abrirla.
+
 En **modo local**, como abre el archivo de base de datos directamente,
 `DATABASE_URL` debe apuntar al mismo archivo para ambas interfaces. El valor
 predeterminado (`data/library.db`, ruta absoluta) lo hace; si sobrescribes
@@ -318,9 +335,10 @@ Android, así que el destino puede ser Descargas, un pendrive o una carpeta de
   biblioteca de este teléfono. Nada se fusiona: la biblioteca actual se
   reemplaza.
 
-No hay sincronización, a propósito. Exportar e importar son la vía de traslado,
-porque dos copias de una biblioteca que se separan en silencio son peores que un
-traslado explícito.
+Exportar e importar son un traslado de ida. Para mantener varios dispositivos en
+sincronía —el teléfono, el navegador, la app de escritorio— apúntalos todos a una
+misma carpeta compartida; consulta [*La misma biblioteca en todos los
+dispositivos*](#la-misma-biblioteca-en-todos-los-dispositivos-opcional-sin-servidor).
 
 - **Emulador:** usa `http://10.0.2.2:8000` como URL del servidor para llegar a un
   servidor que corre en la computadora anfitriona.
@@ -332,6 +350,69 @@ traslado explícito.
 
 Requiere el **SDK de Flutter 3.47+** y el SDK de Android; no necesita Python en
 el teléfono. Consulta [`mobile/README.md`](mobile/README.md) para más detalles.
+
+---
+
+## La misma biblioteca en todos los dispositivos (opcional, sin servidor)
+
+En una casa suele haber el navegador abierto en la notebook de la cocina, la app
+de escritorio en la computadora del estudio y un teléfono en el bolsillo. Los tres
+pueden trabajar sobre **una sola** biblioteca sin alojar nada: basta con dejar una
+**instantánea** en una carpeta que ya se sincroniza sola —Google Drive, Dropbox,
+Syncthing, un NAS, un pendrive; cualquier cosa que copie un archivo.
+
+Cada dispositivo conserva su propia base de datos viva y nunca abre la
+compartida en el lugar. Una sincronización, en ese orden:
+
+1. lee la instantánea de la carpeta y la combina con la biblioteca local;
+2. escribe una instantánea **nueva** de vuelta —pero solo cuando la biblioteca
+   local tiene algo que la instantánea no tenía, así dos dispositivos inactivos
+   no se rebotan archivos entre sí—;
+3. guarda antes una copia de seguridad con fecha y hora de la biblioteca local
+   (las últimas diez), para que una mala combinación nunca sea definitiva.
+
+La instantánea es una base de datos BiblioJules normal, que puedes abrir a mano
+con cualquier herramienta de SQLite. Se llama `bibliojules-library.sqlite`, no
+lleva cuentas y trae un pequeño encabezado `sync_meta` (formato, generación,
+identificador de la instantánea y el dispositivo que la escribió) para rechazar
+un archivo copiado a medias en lugar de combinarlo.
+
+### Quién gana cuando dos dispositivos no coinciden
+
+| Situación | Resultado |
+| --- | --- |
+| La misma fila se editó en los dos | Gana la **edición más reciente**. Los empates de fecha los resuelve el identificador interno de la fila, así todos los dispositivos eligen al mismo ganador. |
+| Una fila existe en los dos, pero se creó por separado | Se unifican en el primer contacto: los estados por slug, los autores y las editoriales por nombre, y los libros por ISBN. |
+| Un libro se eliminó en uno y se editó en el otro | Gana el más reciente: una edición hecha *después* de la eliminación hace volver el libro. |
+| Se eliminó un estante | Se va todo el subárbol; los libros de esos estantes simplemente quedan sin ubicación. |
+| Los dos editaron la misma fila desde su última sincronización | Se conserva el ganador y el perdedor queda listado en el informe de sincronización, así nada desaparece en silencio. |
+
+Los préstamos viajan con su libro, los estados nunca quedan huérfanos (los libros
+vuelven a *In library*) y cada combinación termina con una verificación de
+consistencia antes de confirmarse. Si algo sale mal, la combinación se revierte y
+la biblioteca queda exactamente como estaba.
+
+### Cómo configurarla
+
+- **Web / servidor:** *Biblioteca compartida* en la barra lateral de
+  administración (`/admin/sync`), o `python -m app.cli sync --file
+  "/ruta/a/la/carpeta"`. Agrega `SYNC_ON_START=true` para sincronizar una vez al
+  iniciar.
+- **Escritorio:** *Configuración → Biblioteca compartida*, y luego **Archivo →
+  Sincronizar la biblioteca ahora…** (`Ctrl+Shift+S`) cuando quieras. Marca
+  *Sincronizar al iniciar la aplicación* para sincronizar al abrirla.
+- **Android:** *Configuración → Biblioteca compartida → Elegir carpeta…*. La
+  carpeta se elige con el selector propio de Android (Drive es uno de los lugares
+  que ofrece) y el permiso se recuerda entre reinicios, así *Sincronizar al
+  iniciar la aplicación* funciona sin intervención.
+
+No hay nada que instalar del lado de la carpeta ni cuenta que crear: la carpeta
+compartida es la única pieza móvil, y debe ser la **misma carpeta** para todos los
+dispositivos. La sincronización necesita el motor SQLite (el predeterminado);
+PostgreSQL y MariaDB no son compatibles.
+
+La sincronización no es en tiempo real. Dos dispositivos coinciden cuando cada uno
+haya sincronizado: al iniciar, o cuando pulses el botón.
 
 ---
 
@@ -377,6 +458,8 @@ el teléfono. Consulta [`mobile/README.md`](mobile/README.md) para más detalles
 │   │   ├── auth.py        #   Cuentas, hash de contraseñas, tokens
 │   │   ├── isbn_lookup.py #   Búsquedas en línea de ISBN/metadatos
 │   │   ├── serializers.py #   Modelo → dict para la API JSON
+│   │   ├── sync.py        #   Instantáneas + la combinación entre dispositivos
+│   │   ├── tombstones.py  #   Eliminaciones que tienen que viajar
 │   │   └── seed.py        #   Estados predeterminados
 │   ├── routers/           # Endpoints HTTP (delgados, llaman a los servicios)
 │   │   ├── pages.py  books.py  locations.py  statuses.py

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -55,6 +59,35 @@ class SettingsDialog(QDialog):
         self.url = QLineEdit(preferences.get_backend_url())
         self.url.setPlaceholderText("https://library.example.com")
         source_form.addRow(_("Backend URL"), self.url)
+
+        shared = QGroupBox(_("Shared library"))
+        shared_form = QFormLayout(shared)
+        self.shared = shared
+
+        self.sync_file = QLineEdit(preferences.get_sync_file())
+        self.sync_file.setPlaceholderText("/home/you/Google Drive/BiblioJules")
+        browse = QPushButton(_("Browse…"))
+        browse.clicked.connect(self._browse_sync_folder)
+        folder_row = QHBoxLayout()
+        folder_row.setContentsMargins(0, 0, 0, 0)
+        folder_row.addWidget(self.sync_file, 1)
+        folder_row.addWidget(browse)
+        shared_form.addRow(_("Folder"), self._wrap(folder_row))
+
+        self.sync_on_start = QCheckBox(_("Sync when the app starts"))
+        self.sync_on_start.setChecked(preferences.get_sync_on_start())
+        shared_form.addRow("", self.sync_on_start)
+
+        hint = QLabel(
+            _(
+                "Every device keeps its own copy of the library. Each sync merges "
+                "the snapshot in this folder and writes a fresh one, so Google "
+                "Drive (or Syncthing, or a USB stick) never sees a live database."
+            )
+        )
+        hint.setObjectName("Hint")
+        hint.setWordWrap(True)
+        shared_form.addRow("", hint)
 
         account = QGroupBox(_("Account"))
         account_form = QFormLayout(account)
@@ -112,6 +145,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.addWidget(source)
+        layout.addWidget(shared)
         layout.addWidget(account)
         layout.addWidget(appearance)
         layout.addWidget(self.message)
@@ -135,6 +169,9 @@ class SettingsDialog(QDialog):
         for widget in (self.url, self.username, self.password, self.sign_in_btn):
             widget.setEnabled(remote)
         self.sign_out_btn.setEnabled(remote and bool(self._token))
+        # The shared folder belongs to the local library; a remote server has
+        # its own copy and its own admin page.
+        self.shared.setEnabled(not remote)
 
     def _render_status(self) -> None:
         if self._token:
@@ -145,6 +182,11 @@ class SettingsDialog(QDialog):
             self.status.setText(_("Not signed in"))
 
     # -- actions ------------------------------------------------------------ #
+    def _browse_sync_folder(self) -> None:
+        start = self.sync_file.text().strip() or str(Path.home())
+        folder = QFileDialog.getExistingDirectory(self, _("Choose the shared folder"), start)
+        if folder:
+            self.sync_file.setText(folder)
     def _on_sign_in(self) -> None:
         url = self.url.text().strip()
         username = self.username.text().strip()
@@ -190,4 +232,6 @@ class SettingsDialog(QDialog):
             "token": self._token,
             "account": self._account,
             "color_theme": self.color_theme.currentData() or themes.DEFAULT_THEME,
+            "sync_file": self.sync_file.text().strip(),
+            "sync_on_start": self.sync_on_start.isChecked(),
         }

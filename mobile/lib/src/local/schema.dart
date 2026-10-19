@@ -17,8 +17,10 @@ library;
 /// Bumped whenever the statements below change, so ``onUpgrade`` can migrate
 /// an existing library instead of silently running against the wrong schema.
 ///
-/// Starts at 1 (the first release of local mode).
-const int kLibrarySchemaVersion = 1;
+/// * 1 — the first release of local mode.
+/// * 2 — the shared-library columns: ``sync_id`` and ``updated_at`` on every
+///   synced row, and ``sync_tombstones`` for deletions.
+const int kLibrarySchemaVersion = 2;
 
 /// Every table and index, in creation order.
 ///
@@ -29,17 +31,23 @@ const List<String> kLibrarySchemaStatements = <String>[
   '''
   CREATE TABLE authors (
     id INTEGER PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE
+    name VARCHAR(255) NOT NULL UNIQUE,
+    sync_id VARCHAR(32),
+    updated_at DATETIME
   )
   ''',
   'CREATE INDEX ix_authors_name ON authors (name)',
+  'CREATE UNIQUE INDEX ix_authors_sync_id ON authors (sync_id)',
   '''
   CREATE TABLE publishers (
     id INTEGER PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE
+    name VARCHAR(255) NOT NULL UNIQUE,
+    sync_id VARCHAR(32),
+    updated_at DATETIME
   )
   ''',
   'CREATE INDEX ix_publishers_name ON publishers (name)',
+  'CREATE UNIQUE INDEX ix_publishers_sync_id ON publishers (sync_id)',
   '''
   CREATE TABLE locations (
     id INTEGER PRIMARY KEY,
@@ -47,11 +55,14 @@ const List<String> kLibrarySchemaStatements = <String>[
     kind VARCHAR(50),
     description TEXT,
     parent_id INTEGER REFERENCES locations (id) ON DELETE CASCADE,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    sync_id VARCHAR(32),
+    updated_at DATETIME
   )
   ''',
   'CREATE INDEX ix_locations_name ON locations (name)',
   'CREATE INDEX ix_locations_parent_id ON locations (parent_id)',
+  'CREATE UNIQUE INDEX ix_locations_sync_id ON locations (sync_id)',
   '''
   CREATE TABLE statuses (
     id INTEGER PRIMARY KEY,
@@ -63,11 +74,14 @@ const List<String> kLibrarySchemaStatements = <String>[
     sort_order INTEGER NOT NULL,
     is_system BOOLEAN NOT NULL,
     is_default BOOLEAN NOT NULL,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    sync_id VARCHAR(32),
+    updated_at DATETIME
   )
   ''',
   'CREATE INDEX ix_statuses_name ON statuses (name)',
   'CREATE INDEX ix_statuses_slug ON statuses (slug)',
+  'CREATE UNIQUE INDEX ix_statuses_sync_id ON statuses (sync_id)',
   '''
   CREATE TABLE books (
     id INTEGER PRIMARY KEY,
@@ -91,7 +105,8 @@ const List<String> kLibrarySchemaStatements = <String>[
     source VARCHAR(40),
     notes TEXT,
     created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    sync_id VARCHAR(32)
   )
   ''',
   'CREATE INDEX ix_books_isbn ON books (isbn)',
@@ -100,6 +115,7 @@ const List<String> kLibrarySchemaStatements = <String>[
   'CREATE INDEX ix_books_published_year ON books (published_year)',
   'CREATE INDEX ix_books_location_id ON books (location_id)',
   'CREATE INDEX ix_books_status_id ON books (status_id)',
+  'CREATE UNIQUE INDEX ix_books_sync_id ON books (sync_id)',
   '''
   CREATE TABLE book_authors (
     book_id INTEGER NOT NULL REFERENCES books (id) ON DELETE CASCADE,
@@ -117,10 +133,72 @@ const List<String> kLibrarySchemaStatements = <String>[
     due_at DATE,
     returned_at DATE,
     notes TEXT,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    sync_id VARCHAR(32),
+    updated_at DATETIME
   )
   ''',
   'CREATE INDEX ix_loans_book_id ON loans (book_id)',
+  'CREATE UNIQUE INDEX ix_loans_sync_id ON loans (sync_id)',
+  '''
+  CREATE TABLE sync_tombstones (
+    table_name VARCHAR(40) NOT NULL,
+    sync_id VARCHAR(32) NOT NULL,
+    deleted_at DATETIME NOT NULL,
+    PRIMARY KEY (table_name, sync_id)
+  )
+  ''',
+];
+
+/// The tables whose rows carry a ``sync_id`` and an ``updated_at``.
+///
+/// Mirrors ``SYNCED_TABLES`` in ``app/services/sync.py`` (and
+/// ``app/database.py``), and is the list the merge walks.
+const List<String> kSyncedTables = <String>[
+  'books',
+  'authors',
+  'publishers',
+  'locations',
+  'statuses',
+  'loans',
+];
+
+/// Tables a delete can be remembered for. Loans go with their book, and
+/// orphan-pruning is garbage collection rather than a user delete.
+const List<String> kTombstoneTables = <String>['books', 'statuses', 'locations'];
+
+/// The column statements that upgrade a version-1 library to version 2.
+///
+/// SQLite cannot add a ``NOT NULL`` column without a constant default, so both
+/// new columns are nullable; every insert fills them. They are also added in
+/// the same order the server's migration uses, so an upgraded file and a fresh
+/// one look the same to a merge.
+const List<String> kSyncMigrationStatements = <String>[
+  'ALTER TABLE authors ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE authors ADD COLUMN updated_at DATETIME',
+  'ALTER TABLE publishers ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE publishers ADD COLUMN updated_at DATETIME',
+  'ALTER TABLE locations ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE locations ADD COLUMN updated_at DATETIME',
+  'ALTER TABLE statuses ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE statuses ADD COLUMN updated_at DATETIME',
+  'ALTER TABLE books ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE loans ADD COLUMN sync_id VARCHAR(32)',
+  'ALTER TABLE loans ADD COLUMN updated_at DATETIME',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_authors_sync_id ON authors (sync_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_publishers_sync_id ON publishers (sync_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_locations_sync_id ON locations (sync_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_statuses_sync_id ON statuses (sync_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_books_sync_id ON books (sync_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS ix_loans_sync_id ON loans (sync_id)',
+  '''
+  CREATE TABLE IF NOT EXISTS sync_tombstones (
+    table_name VARCHAR(40) NOT NULL,
+    sync_id VARCHAR(32) NOT NULL,
+    deleted_at DATETIME NOT NULL,
+    PRIMARY KEY (table_name, sync_id)
+  )
+  ''',
 ];
 
 /// The system statuses a brand-new library starts with.

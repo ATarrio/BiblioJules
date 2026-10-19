@@ -230,4 +230,68 @@ void main() {
     // Nothing is left behind in the scratch directory.
     expect(scratch.listSync(), isEmpty);
   });
+
+  testWidgets('the settings screen sends the library to a shared folder',
+      (tester) async {
+    final container = await _bootLocal(tester, repo, signedIn: true);
+    addTearDown(container.dispose);
+
+    // Stand in for Android's folder picker and its persisted grant.
+    const channel = MethodChannel(kFilesChannel);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      switch (call.method) {
+        case 'pickSyncFolder':
+          return <Object?, Object?>{
+            'uri': 'content://tree/primary%3ABiblioJules',
+            'name': 'BiblioJules',
+          };
+        case 'syncFolderName':
+          return 'BiblioJules';
+        case 'syncPermission':
+          return true;
+        default:
+          return null;
+      }
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    // Nothing chosen yet: the section explains itself and offers the picker.
+    expect(find.text('SHARED LIBRARY'), findsOneWidget);
+    expect(find.text('No folder chosen yet'), findsOneWidget);
+    expect(find.text('Sync now'), findsNothing);
+
+    await tester.tap(find.text('Choose folder…'));
+    await tester.pumpAndSettle();
+
+    // The folder is remembered, named on screen, and the sync rows appear.
+    expect(find.text('BiblioJules'), findsOneWidget);
+    expect(find.text('Shared folder saved.'), findsOneWidget);
+    expect(find.text('Sync now'), findsOneWidget);
+    expect(find.text('Sync when the app starts'), findsOneWidget);
+    expect(container.read(prefsProvider).syncFolderUri, isNotNull);
+    expect(container.read(librarySyncProvider), isNotNull);
+
+    // The switch is a preference, so it survives the restart it describes.
+    // (The "shared folder saved" snackbar sits over the bottom of the list, so
+    // let it time out — and its exit animation finish — before reaching for the
+    // switch.)
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sync when the app starts'));
+    await tester.pumpAndSettle();
+    expect(container.read(prefsProvider).syncOnStart, isTrue);
+  });
 }

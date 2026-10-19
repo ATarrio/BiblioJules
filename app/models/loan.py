@@ -14,9 +14,10 @@ from sqlalchemy import Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import SyncIdMixin, UpdatedAtMixin
 
 
-class Loan(Base):
+class Loan(SyncIdMixin, UpdatedAtMixin, Base):
     __tablename__ = "loans"
 
     id: Mapped[int] = mapped_column(primary_key=True)

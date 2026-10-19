@@ -13,9 +13,10 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import SyncIdMixin, UpdatedAtMixin
 
 
-class Status(Base):
+class Status(SyncIdMixin, UpdatedAtMixin, Base):
     __tablename__ = "statuses"
 
     id: Mapped[int] = mapped_column(primary_key=True)

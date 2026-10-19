@@ -39,6 +39,26 @@ def run(argv: list[str] | None = None) -> int:
         initialize_database()
         set_repo(LocalRepo())
 
+        # Optional auto-sync on start (never on close: a merge changes data and
+        # deserves the user watching). Keep going if the folder is unavailable.
+        if preferences.get_sync_on_start():
+            folder = preferences.get_sync_file()
+            if folder:
+                from ..services import sync as sync_service
+
+                try:
+                    result = sync_service.sync_now(folder)
+                    merge = result.merge
+                    if merge is not None and merge.changes:
+                        print(
+                            "BiblioJules: merged "
+                            f"{merge.changes} change(s) from the shared folder."
+                        )
+                except sync_service.SyncError as exc:
+                    print(f"BiblioJules: shared library not synced: {exc}", file=sys.stderr)
+                except Exception:  # pragma: no cover - unexpected filesystem trouble
+                    print("BiblioJules: shared library sync failed.", file=sys.stderr)
+
     window = MainWindow()
     window.show()
     return app.exec()

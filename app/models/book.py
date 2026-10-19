@@ -8,9 +8,10 @@ from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import SyncIdMixin
 
 
-class Book(Base):
+class Book(SyncIdMixin, Base):
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(primary_key=True)

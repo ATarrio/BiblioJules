@@ -113,3 +113,33 @@ def set_remote_session(
     preferences["api_token"] = (token or "").strip()
     preferences["account_name"] = (account or "").strip()
     save_preferences(preferences)
+
+
+# --------------------------------------------------------------------------- #
+# Shared library (file-based sync)
+# --------------------------------------------------------------------------- #
+# The desktop keeps its own copy of the folder setting: it may point at a
+# different folder than the web app's stored setting, and it must work even when
+# only the desktop is installed. The sync service still uses the same snapshot
+# format, so both can share one folder when they run on the same machine.
+def get_sync_file() -> str:
+    return str(load_preferences().get("sync_file") or "").strip()
+
+
+def set_sync_file(path: str) -> str:
+    preferences = load_preferences()
+    value = (path or "").strip()
+    preferences["sync_file"] = value
+    save_preferences(preferences)
+    return value
+
+
+def get_sync_on_start() -> bool:
+    return bool(load_preferences().get("sync_on_start", False))
+
+
+def set_sync_on_start(enabled: bool) -> bool:
+    preferences = load_preferences()
+    preferences["sync_on_start"] = bool(enabled)
+    save_preferences(preferences)
+    return bool(enabled)

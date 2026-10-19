@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # Native desktop/mobile clients do not need this.
     cors_origins: str = ""
 
+    # --- Shared library (sync) ----------------------------------------------
+    # The folder (or exact .sqlite file) that holds the shared snapshot. Point
+    # this at a Google Drive folder, a Syncthing folder, a USB stick… Leave it
+    # empty to keep the library local. Can also be set from the admin page.
+    sync_file: str = ""
+    # Merge the shared snapshot once at start-up (never on shutdown: a merge
+    # can change data, and that deserves the user watching).
+    sync_on_start: bool = False
+
     # Expose FastAPI's interactive docs (``/docs``) and the OpenAPI schema.
     # Convenient in development; consider disabling on a public instance.
     enable_docs: bool = True

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import MetaData, create_engine, event, inspect, text
+from sqlalchemy import MetaData, create_engine, event, inspect, select, text, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -113,3 +113,56 @@ def _add_column_statement(connection, table_name: str, column) -> str:
             )
         statement += f" DEFAULT {server_default.arg}"
     return statement
+
+
+# --------------------------------------------------------------------------- #
+# Sync schema
+# --------------------------------------------------------------------------- #
+#: The models whose rows travel between devices. ``book_authors`` is absent:
+#: a book's author set is carried by the book row and rebuilt on merge.
+SYNCED_TABLES = ("books", "authors", "publishers", "locations", "statuses", "loans")
+
+
+def ensure_sync_schema() -> None:
+    """Bring an existing database up to the schema the sync feature needs.
+
+    ``Base.metadata.create_all`` creates new tables but never alters old ones, so
+    this applies the usual ``ensure_schema()`` column additions and then:
+
+    * gives every pre-existing row a ``sync_id`` (keeping its ``updated_at`` —
+      a plain ORM update would otherwise fire ``onupdate`` and make every book
+      look edited today);
+    * dates rows whose ``updated_at`` is still empty;
+    * creates the unique index behind ``sync_id`` (``create_all`` only does that
+      for databases it creates from scratch).
+
+    Safe to run at every start-up; every step is idempotent.
+    """
+    from .models import Author, Book, Loan, Location, Publisher, Status
+    from .models.common import new_sync_id
+
+    ensure_schema()
+
+    models = (Book, Author, Publisher, Location, Status, Loan)
+    with engine.begin() as connection:
+        for model in models:
+            rows = connection.execute(
+                select(model.id, model.updated_at).where(model.sync_id.is_(None))
+            ).all()
+            for row_id, updated_at in rows:
+                values = {"sync_id": new_sync_id()}
+                if updated_at is not None:
+                    # Passing the timestamp explicitly puts it in the SET
+                    # clause, so SQLAlchemy's ``onupdate`` cannot replace it
+                    # with "now" and make every old row look freshly edited.
+                    values["updated_at"] = updated_at
+                connection.execute(
+                    update(model).where(model.id == row_id).values(**values)
+                )
+        for table in SYNCED_TABLES:
+            connection.execute(
+                text(
+                    f'CREATE UNIQUE INDEX IF NOT EXISTS "ix_{table}_sync_id" '
+                    f'ON "{table}" ("sync_id")'
+                )
+            )

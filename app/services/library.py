@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from ..book_fields import COVER_TYPE_SLUGS, MAX_SCORE, MIN_SCORE, READ_STATUS_SLUGS, SCORE_STEP
 from ..i18n import _
 from ..models import Author, Book, Loan, Location, Publisher, Status
+from ..models.common import utc_now
+from . import tombstones
 from .isbn_lookup import extract_year, is_valid_isbn, normalize_isbn
 
 # --------------------------------------------------------------------------- #
@@ -162,6 +164,11 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
         publisher = get_or_create_publisher(db, data.get("publisher"))
         book.publisher = publisher
 
+    # Relationship-only edits (the author list, the publisher) do not touch
+    # a column on the book row, so SQLAlchemy's ``onupdate`` would miss them.
+    # The merge resolves a book's whole author set by this timestamp, so it
+    # has to move on every edit.
+    book.updated_at = utc_now()
     return book
 
 
@@ -194,6 +201,7 @@ def get_book(db: Session, book_id: int) -> Book | None:
 
 
 def delete_book(db: Session, book: Book) -> None:
+    tombstones.record(db, "books", book.sync_id)
     db.delete(book)
     # Flush so the book's author links are gone before we look for orphans.
     db.flush()
@@ -439,10 +447,18 @@ def delete_status(db: Session, status: Status) -> None:
     if status.is_system:
         raise ValueError(_("System statuses cannot be deleted."))
     fallback = get_status_by_slug(db, "available")
-    for book in status.books:
-        book.status_id = fallback.id if fallback else None
-    db.delete(status)
+    fallback_id = fallback.id if fallback else None
+    tombstones.record(db, "statuses", status.sync_id)
+    # Bulk statements on purpose: deleting a Status through the ORM also
+    # nullifies every row in its loaded ``books`` collection, which would undo
+    # the repoint. A plain UPDATE also bumps each book's ``updated_at``, so the
+    # new status travels to the other devices on the next sync.
+    db.execute(
+        update(Book).where(Book.status_id == status.id).values(status_id=fallback_id)
+    )
+    db.execute(delete(Status).where(Status.id == status.id))
     db.commit()
+    db.expunge(status)
 
 
 def update_status(db: Session, status: Status, *, name=None, color=None, icon=None,
@@ -501,6 +517,14 @@ def create_location(db: Session, *, name: str, parent_id=None, kind=None, descri
 
 
 def delete_location(db: Session, location: Location) -> None:
+    # The cascade takes the children with it, so remember each of them.
+    subtree = location.descendant_ids()
+    sync_ids = db.scalars(
+        select(Location.sync_id).where(
+            Location.id.in_(subtree), Location.sync_id.is_not(None)
+        )
+    ).all()
+    tombstones.record_many(db, "locations", sync_ids)
     db.delete(location)
     db.commit()
 

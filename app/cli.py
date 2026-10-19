@@ -11,6 +11,7 @@ Other handy commands::
     python -m app.cli list-users
     python -m app.cli set-password jane
     python -m app.cli delete-user jane
+    python -m app.cli sync --file ~/Drive/BiblioJules
 """
 
 from __future__ import annotations
@@ -20,14 +21,14 @@ import getpass
 import sys
 
 from . import models  # noqa: F401  (registers every model on Base.metadata)
-from .database import Base, SessionLocal, engine, ensure_schema
+from .database import Base, SessionLocal, engine, ensure_sync_schema
 from .services import auth
 from .services.seed import seed_defaults
 
 
 def _prepare_database() -> None:
     Base.metadata.create_all(bind=engine)
-    ensure_schema()
+    ensure_sync_schema()
     db = SessionLocal()
     try:
         seed_defaults(db)
@@ -161,6 +162,45 @@ def cmd_delete_user(args) -> int:
     return 0
 
 
+def cmd_sync(args) -> int:
+    _prepare_database()
+    from .services import sync as sync_service
+
+    try:
+        path = sync_service.resolve_target(args.file)
+        result = sync_service.sync_now(args.file, force=args.force)
+    except sync_service.SyncError as exc:
+        print(f"Sync failed: {exc}", file=sys.stderr)
+        return 1
+
+    merge = result.merge
+    if merge is not None:
+        if merge.changes:
+            source = merge.source_device or "another device"
+            print(f"Merged generation {merge.source_generation} from {source}.")
+            for bucket, label in (
+                (merge.added, "added"),
+                (merge.updated, "updated"),
+                (merge.deleted, "deleted"),
+            ):
+                parts = ", ".join(f"{count} {table}" for table, count in sorted(bucket.items()))
+                if parts:
+                    print(f"  {label}: {parts}")
+            for note in merge.conflicts[:10]:
+                print(f"  note: {note}")
+        else:
+            print("The snapshot had nothing new.")
+    if result.pushed:
+        print(
+            f"Published generation {result.snapshot.generation} "
+            f"({result.snapshot.snapshot_id[:8]}) by {result.snapshot.device_name}."
+        )
+    else:
+        print("Nothing to publish: the shared file is already up to date.")
+    print(f"Shared file: {path}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # Argument parsing
 # --------------------------------------------------------------------------- #
@@ -196,6 +236,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("delete-user", help="Delete an account")
     p.add_argument("username")
     p.set_defaults(func=cmd_delete_user)
+
+    p = sub.add_parser(
+        "sync", help="Merge the shared library snapshot and publish local changes"
+    )
+    p.add_argument("--file", help="Shared folder or snapshot file (defaults to SYNC_FILE)")
+    p.add_argument(
+        "--force", action="store_true", help="Publish even when the snapshot is up to date"
+    )
+    p.set_defaults(func=cmd_sync)
 
     return parser
 

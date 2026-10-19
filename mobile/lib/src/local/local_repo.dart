@@ -31,6 +31,7 @@ import 'converters.dart';
 import 'library_files.dart';
 import 'lookup.dart';
 import 'schema.dart';
+import 'sync_ids.dart';
 
 class LocalRepo implements LibraryRepo {
   LocalRepo({Future<Directory> Function()? documentsDirectory})
@@ -59,6 +60,10 @@ class LocalRepo implements LibraryRepo {
 
   /// True once a library has been opened.
   bool get isOpen => _db != null;
+
+  /// The open library's file, or ``null``. The shared-library sync needs the
+  /// path: it opens a second connection to the same file to merge a snapshot.
+  String? get databasePath => _db?.path;
 
   /// The open library's name, or ``null``.
   String? get libraryName => _libraryName;
@@ -94,13 +99,70 @@ class LocalRepo implements LibraryRepo {
         await _seedDefaults(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Version 1 is the first release of local mode, so there is nothing to
-        // migrate yet. A future change to `schema.dart` adds an
-        // `if (oldVersion < N)` step here, mirroring the server's migration.
+        // Version 1 → 2: the shared-library columns (sync ids, change stamps
+        // and the tombstones deletions travel as). Mirrors the server's
+        // ``ensure_sync_schema``; see schema.dart for the statements.
+        if (oldVersion < 2) {
+          await _upgradeToSyncSchema(db);
+        }
       },
     );
     _db = database;
     _libraryName = name;
+  }
+
+  /// Add the sync columns to a library that predates sharing, and fill them in.
+  ///
+  /// SQLite refuses ``ADD COLUMN ... NOT NULL``, so the columns arrive empty and
+  /// every existing row is given an id and a change stamp immediately after.
+  /// Doing it here (rather than lazily on first read) keeps the rest of the
+  /// store free of null checks, exactly as the server's backfill does.
+  Future<void> _upgradeToSyncSchema(DatabaseExecutor db) async {
+    for (final statement in kSyncMigrationStatements) {
+      try {
+        await db.execute(statement);
+      } on DatabaseException catch (error) {
+        // A file that got half-way through an earlier attempt is fine: adding
+        // an existing column is the one failure worth ignoring.
+        if (!'$error'.toLowerCase().contains('duplicate column')) rethrow;
+      }
+    }
+    await _backfillSyncIds(db);
+  }
+
+  Future<void> _backfillSyncIds(DatabaseExecutor db) async {
+    for (final table in kSyncedTables) {
+      final rows = await db.query(
+        table,
+        columns: const <String>['id'],
+        where: 'sync_id IS NULL',
+      );
+      for (final row in rows) {
+        await db.update(
+          table,
+          <String, Object?>{'sync_id': newSyncId()},
+          where: 'id = ?',
+          whereArgs: <Object?>[row['id']],
+        );
+      }
+    }
+    final now = nowStamp();
+    // ``books`` has had ``updated_at`` since the first release; the rest are
+    // seeded from ``created_at`` where the table has one, so an old row does
+    // not look as though it changed the moment the app was updated.
+    for (final table in const <String>['authors', 'publishers']) {
+      await db.rawUpdate(
+        'UPDATE $table SET updated_at = ? WHERE updated_at IS NULL',
+        <Object?>[now],
+      );
+    }
+    for (final table in const <String>['locations', 'statuses', 'loans']) {
+      await db.rawUpdate(
+        'UPDATE $table SET updated_at = COALESCE(created_at, ?)'
+        ' WHERE updated_at IS NULL',
+        <Object?>[now],
+      );
+    }
   }
 
   /// Close the open library, if any. Safe to call when nothing is open.
@@ -184,8 +246,12 @@ class LocalRepo implements LibraryRepo {
     if (target.existsSync()) await target.delete();
     if (!target.parent.existsSync()) await target.parent.create(recursive: true);
 
-    // Any pending WAL frames belong in the file we are about to copy.
-    await db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    // Any pending WAL frames belong in the file we are about to copy. This is a
+    // query, not an ``execute``: the pragma answers with a row, and Android's
+    // sqflite refuses row-returning statements through ``execute`` — while the
+    // FFI build the tests run on accepts them, which is how this slipped
+    // through once. Every pragma here goes through ``rawQuery`` for that reason.
+    await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
     try {
       final path = target.path.replaceAll("'", "''");
       await db.execute("VACUUM INTO '$path'");
@@ -354,6 +420,8 @@ class LocalRepo implements LibraryRepo {
         'is_system': 1,
         'is_default': spec['is_default'] == true ? 1 : 0,
         'created_at': now,
+        'sync_id': newSyncId(),
+        'updated_at': now,
       });
     }
   }
@@ -655,6 +723,7 @@ class LocalRepo implements LibraryRepo {
         'title': 'Untitled',
         'created_at': now,
         'updated_at': now,
+        'sync_id': newSyncId(),
       };
       if (_isFalsy(data['status_id'])) {
         final fallback = await _defaultStatusId(txn);
@@ -695,7 +764,11 @@ class LocalRepo implements LibraryRepo {
       throw ApiNotFoundException(_t('Book not found'));
     }
     // Loans and author links go with it: both are ON DELETE CASCADE, and
-    // foreign keys are switched on when the file is opened.
+    // foreign keys are switched on when the file is opened. The tombstone
+    // travels so the other devices delete their copy instead of re-adding it.
+    await _recordTombstones(db, 'books', <String?>[
+      (await _bookRow(db, id))?['sync_id'] as String?,
+    ]);
     await db.delete('books', where: 'id = ?', whereArgs: [id]);
     await _pruneOrphans(db);
     return true;
@@ -823,7 +896,11 @@ class LocalRepo implements LibraryRepo {
       limit: 1,
     );
     if (existing.isNotEmpty) return existing.first['id']! as int;
-    return db.insert('authors', <String, Object?>{'name': name});
+    return db.insert('authors', <String, Object?>{
+      'name': name,
+      'sync_id': newSyncId(),
+      'updated_at': nowStamp(),
+    });
   }
 
   Future<int> _getOrCreatePublisher(DatabaseExecutor db, String name) async {
@@ -834,7 +911,36 @@ class LocalRepo implements LibraryRepo {
       limit: 1,
     );
     if (existing.isNotEmpty) return existing.first['id']! as int;
-    return db.insert('publishers', <String, Object?>{'name': name});
+    return db.insert('publishers', <String, Object?>{
+      'name': name,
+      'sync_id': newSyncId(),
+      'updated_at': nowStamp(),
+    });
+  }
+
+  /// Note that a row was deleted, so the deletion can travel.
+  ///
+  /// A merge only sees two databases: a row missing from one could have been
+  /// deleted there or simply never created. The note (never shown to the user)
+  /// is what tells the two apart. Mirrors ``app/services/tombstones.py``.
+  Future<void> _recordTombstones(
+    DatabaseExecutor db,
+    String table,
+    Iterable<String?> syncIds,
+  ) async {
+    final now = nowStamp();
+    for (final syncId in syncIds) {
+      if (syncId == null || syncId.isEmpty) continue;
+      await db.insert(
+        'sync_tombstones',
+        <String, Object?>{
+          'table_name': table,
+          'sync_id': syncId,
+          'deleted_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   /// Delete authors and publishers no longer linked to any book, so the filter
@@ -878,6 +984,8 @@ class LocalRepo implements LibraryRepo {
         'returned_at': null,
         'notes': note.isEmpty ? null : note,
         'created_at': nowStamp(),
+        'sync_id': newSyncId(),
+        'updated_at': nowStamp(),
       });
       if (markStatus) {
         final lent = await _statusBySlug(txn, 'lent');
@@ -921,7 +1029,7 @@ class LocalRepo implements LibraryRepo {
       if (active.isNotEmpty) {
         await txn.update(
           'loans',
-          <String, Object?>{'returned_at': stamp},
+          <String, Object?>{'returned_at': stamp, 'updated_at': nowStamp()},
           where: 'id = ?',
           whereArgs: <Object?>[active.first['id']],
         );
@@ -963,12 +1071,15 @@ class LocalRepo implements LibraryRepo {
     String? description,
   }) async {
     final db = _requireDb();
+    final now = nowStamp();
     final id = await db.insert('locations', <String, Object?>{
       'name': name.trim(),
       'parent_id': _toId(parentId),
       'kind': _blankToNull(kind),
       'description': _blankToNull(description),
-      'created_at': nowStamp(),
+      'created_at': now,
+      'sync_id': newSyncId(),
+      'updated_at': now,
     });
     return _locationById(db, id);
   }
@@ -1002,6 +1113,7 @@ class LocalRepo implements LibraryRepo {
         // The server leaves these alone when the caller sends nothing.
         if (kind != null) 'kind': _blankToNull(kind),
         if (description != null) 'description': _blankToNull(description),
+        'updated_at': nowStamp(),
       },
       where: 'id = ?',
       whereArgs: <Object?>[id],
@@ -1012,11 +1124,21 @@ class LocalRepo implements LibraryRepo {
   @override
   Future<bool> deleteLocation(int id) async {
     final db = _requireDb();
-    if (!(await _locationRows(db)).containsKey(id)) {
+    final locations = await _locationRows(db);
+    if (!locations.containsKey(id)) {
       throw ApiNotFoundException(_t('Location not found'));
     }
     // Children cascade; books on any of those shelves are simply unshelved.
-    await db.delete('locations', where: 'id = ?', whereArgs: <Object?>[id]);
+    // Every shelf that is about to go needs its own tombstone, or the other
+    // devices would treat the missing rows as "never created here" and push
+    // them straight back.
+    await db.transaction((txn) async {
+      await _recordTombstones(txn, 'locations', <String?>[
+        for (final childId in _descendantIds(locations, id))
+          locations[childId]?['sync_id'] as String?,
+      ]);
+      await txn.delete('locations', where: 'id = ?', whereArgs: <Object?>[id]);
+    });
     return true;
   }
 
@@ -1142,6 +1264,8 @@ class LocalRepo implements LibraryRepo {
       'is_system': 0,
       'is_default': 0,
       'created_at': nowStamp(),
+      'sync_id': newSyncId(),
+      'updated_at': nowStamp(),
     });
     return _statusById(db, id);
   }
@@ -1181,6 +1305,7 @@ class LocalRepo implements LibraryRepo {
     if (color.trim().isNotEmpty) values['color'] = color.trim();
     values['icon'] = _blankToNull(icon);
     values['description'] = _blankToNull(description);
+    values['updated_at'] = nowStamp();
 
     await db.update('statuses', values, where: 'id = ?', whereArgs: <Object?>[id]);
     return _statusById(db, id);
@@ -1198,11 +1323,15 @@ class LocalRepo implements LibraryRepo {
       );
     }
     await db.transaction((txn) async {
-      // Whatever was on that shelf's status falls back to the default one.
+      await _recordTombstones(txn, 'statuses', <String?>[
+        existing['sync_id'] as String?,
+      ]);
+      // Whatever was on that status falls back to the default one. The stamp
+      // moves with it, so the repointed books travel in the snapshot too.
       final fallback = await _statusBySlug(txn, 'available');
       await txn.update(
         'books',
-        <String, Object?>{'status_id': fallback},
+        <String, Object?>{'status_id': fallback, 'updated_at': nowStamp()},
         where: 'status_id = ?',
         whereArgs: <Object?>[id],
       );

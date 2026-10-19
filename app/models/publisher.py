@@ -6,9 +6,10 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import SyncIdMixin, UpdatedAtMixin
 
 
-class Publisher(Base):
+class Publisher(SyncIdMixin, UpdatedAtMixin, Base):
     __tablename__ = "publishers"
 
     id: Mapped[int] = mapped_column(primary_key=True)

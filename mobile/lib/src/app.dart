@@ -154,11 +154,42 @@ final routerProvider = Provider<GoRouter>((ref) {
   return router;
 });
 
-class BiblioJulesApp extends ConsumerWidget {
+class BiblioJulesApp extends ConsumerStatefulWidget {
   const BiblioJulesApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BiblioJulesApp> createState() => _BiblioJulesAppState();
+}
+
+class _BiblioJulesAppState extends ConsumerState<BiblioJulesApp> {
+  @override
+  void initState() {
+    super.initState();
+    // After the first frame, so the screens are up and the merge can close and
+    // reopen the database underneath them.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOnStart());
+  }
+
+  /// One sync per launch, when the user asked for it.
+  ///
+  /// A failure is only logged: a phone that has been offline, or a folder whose
+  /// grant has lapsed, must never stop the library from opening. The user can
+  /// retry from Settings, where the real message is shown.
+  Future<void> _syncOnStart() async {
+    final prefs = ref.read(prefsProvider);
+    if (!prefs.syncOnStart || prefs.syncFolderUri == null) return;
+    if (!ref.read(sessionProvider).isLocal) return;
+    try {
+      await ref.read(librarySyncProvider)?.run();
+      if (!mounted) return;
+      refreshEverything(ref);
+    } on Object catch (error) {
+      debugPrint('Shared library sync at start-up failed: $error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final palette = ref.watch(paletteProvider);
     final router = ref.watch(routerProvider);

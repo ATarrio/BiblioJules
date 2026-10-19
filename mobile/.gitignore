@@ -44,5 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# The upload key and its passwords. Generated once per app, never committed.
+/android/keys/
+
+# Gradle's own reports; the app's build output goes to /build/ instead.
+/android/build/
+
 # Widget Preview related
 .widget_preview/

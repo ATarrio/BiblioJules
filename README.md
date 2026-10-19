@@ -76,6 +76,12 @@ its own and work with **no server at all**.
 - **Three front-ends, one library.** Browser, a native desktop window with
   local-database and remote modes, and a native Android app that can keep its
   own library on the phone (fully offline) or talk to a hosted one.
+- **Share that library across devices, without a server.** Point the web admin
+  page, the desktop app and the Android app at the same folder — Google Drive,
+  Dropbox, Syncthing, a USB stick — and they exchange snapshots of the library:
+  the newest edit of each row wins, deletions travel too, and nothing but whole
+  files ever lands in the folder. See
+  [*The same library on every device*](#the-same-library-on-every-device-optional-no-server).
 
 ---
 
@@ -165,6 +171,8 @@ Worth choosing before you expose it (set them in `docker-compose.yml`, or in a
 | `COOKIE_SECURE=true` | send the session cookie over HTTPS only |
 | `ENABLE_DOCS=false` | hide `/docs` on a public instance |
 | `SESSION_TTL_DAYS` | how long a sign-in lasts (30 by default) |
+| `SYNC_FILE` | the shared folder this instance exchanges snapshots through (see [*The same library on every device*](#the-same-library-on-every-device-optional-no-server)) |
+| `SYNC_ON_START=true` | sync once when the app starts |
 
 **HTTPS.** Terminate TLS in front of the app. The compose file has a
 ready-to-uncomment **Caddy** service that fetches a certificate for you:
@@ -240,6 +248,13 @@ The button at the bottom of the sidebar always shows where the data comes from
 (the local database, or the account you signed in with) and reopens the settings
 dialog when clicked.
 
+In **local mode** that dialog also has a *Shared library* group: point it at a
+folder that syncs itself (Google Drive, Syncthing, a USB stick) and it keeps the
+desktop, the browser and your phone on the same library — see
+[*The same library on every device*](#the-same-library-on-every-device-optional-no-server).
+**File → Sync library now…** (`Ctrl+Shift+S`) syncs on demand, and *Sync when
+the app starts* does it at launch.
+
 In **local mode**, because it opens the database file directly, `DATABASE_URL`
 must resolve to the same file for both front-ends. The default
 (`data/library.db`, absolute path) does; if you override `DATABASE_URL` in
@@ -294,9 +309,9 @@ extra setup.
   accounts and all — and makes it this phone's library. Nothing is merged: the
   current library is replaced.
 
-There is deliberately **no sync**. Export and import are the transfer path,
-because two copies of a library that quietly drift apart are worse than an
-explicit move.
+Export and import are a one-way move. To keep several devices in step instead —
+the phone, the browser, the desktop app — point them all at one shared folder;
+see [*The same library on every device*](#the-same-library-on-every-device-optional-no-server).
 
 - **Emulator:** use `http://10.0.2.2:8000` as the backend URL to reach a server
   on the host machine.
@@ -308,6 +323,66 @@ explicit move.
 
 Requires the **Flutter 3.47+ SDK** plus the Android SDK — no Python on the
 phone. See [`mobile/README.md`](mobile/README.md) for details.
+
+---
+
+## The same library on every device (optional, no server)
+
+A household usually has the browser open on the kitchen laptop, the desktop app
+on the study computer and a phone in a pocket. All three can work on **one**
+library without hosting anything, by leaving a **snapshot** of it in a folder
+that already syncs itself — Google Drive, Dropbox, Syncthing, a NAS, a USB
+stick; anything that copies a file.
+
+Every device keeps its own live database and never opens the shared one in
+place. A sync, in that order:
+
+1. reads the snapshot in the folder and merges it into the local library;
+2. writes a **new** snapshot back — but only when the local library has
+   something the snapshot did not, so two idle devices cannot ping-pong files
+   at each other;
+3. keeps a timestamped backup of the local library (the last ten) first, so a
+   bad merge is never final.
+
+The snapshot is a normal BiblioJules database, openable by hand with any SQLite
+tool. It is called `bibliojules-library.sqlite`, holds no accounts, and carries
+a small `sync_meta` header (format, generation, snapshot id, and the device that
+wrote it) so a half-copied file is refused instead of merged.
+
+### What wins when two devices disagree
+
+| Situation | Result |
+| --- | --- |
+| The same row was edited on both | The **newest edit** wins. Equal timestamps are settled by the row's internal id, so every device picks the same winner. |
+| A row exists on both devices but was created independently | They are married on first contact: statuses by slug, authors and publishers by name, books by ISBN. |
+| A book was deleted on one device and edited on the other | The newer of the two wins — an edit made *after* the delete brings the book back. |
+| A shelf was deleted | The whole subtree goes with it; the books on those shelves are simply unshelved. |
+| Both devices edited the same row since their last sync | The winner is kept and the loser is listed in the sync report, so nothing disappears silently. |
+
+Loans travel with their book, statuses are never left dangling (books fall back
+to *In library*), and every merge ends with a consistency check before it is
+committed. If anything is wrong, the merge is rolled back and the library is
+left exactly as it was.
+
+### Setting it up
+
+- **Web / server:** *Shared library* in the admin sidebar (`/admin/sync`), or
+  `python -m app.cli sync --file "/path/to/folder"`. Add `SYNC_ON_START=true`
+  to sync once at start-up.
+- **Desktop:** *Settings → Shared library*, then **File → Sync library now…**
+  (`Ctrl+Shift+S`) whenever you want. Tick *Sync when the app starts* to sync at
+  launch.
+- **Android:** *Settings → Shared library → Choose folder…*. The folder is chosen
+  with Android's own picker (Drive is one of the places it offers) and the grant
+  is remembered across restarts, so *Sync when the app starts* works unattended.
+
+There is nothing to install on the folder's side and no account to create: the
+shared folder is the only moving part, and it must be the **same folder** for
+every device. Sync needs the SQLite backend (the default); PostgreSQL and MariaDB
+are not supported.
+
+Sync is not real time. Two devices agree once each of them has synced — on
+start-up, or when you press the button.
 
 ---
 
@@ -351,6 +426,8 @@ phone. See [`mobile/README.md`](mobile/README.md) for details.
 │   │   ├── auth.py        #   Accounts, password hashing, tokens
 │   │   ├── isbn_lookup.py #   Online ISBN/metadata lookups
 │   │   ├── serializers.py #   Model → dict for the JSON API
+│   │   ├── sync.py        #   Snapshots + the cross-device merge
+│   │   ├── tombstones.py  #   Deletions that have to travel
 │   │   └── seed.py        #   Default statuses
 │   ├── routers/           # HTTP endpoints (thin, call services)
 │   │   ├── pages.py  books.py  locations.py  statuses.py

@@ -136,6 +136,12 @@ The token the app gets back is stored in the **Android keystore**
 (`flutter_secure_storage`), not in plain preferences, and the server can revoke
 it. Sessions last about 30 days; signing out forgets the token on the device.
 
+### Account deletion
+
+BiblioJules runs no service of its own. The sign-in screen points at a server
+**you** run, and a library on this phone has no account at all — so there is no
+upstream account to delete, and deleting one is your server's to provide.
+
 ### HTTPS
 
 Release builds refuse plain HTTP: `android:usesCleartextTraffic="false"` is set
@@ -174,10 +180,11 @@ new one is complete, so a bad file (or a full disk) leaves the library as it was
 Nothing is merged: importing replaces the current library, and the confirmation
 says so.
 
-There is deliberately **no sync**. Export and import are the transfer path,
-because two copies of a library that quietly drift apart are worse than an
-explicit move. A file exported here can be dropped into a hosted instance's
-`data/` directory, and a server's `data/library.db` can be imported here.
+There is no merge in this path: exporting and importing is a one-way move. To
+keep this phone, the browser and the desktop app on the *same* library instead,
+share a folder with them — see *Sharing the library with your other devices*
+below. A file exported here can be dropped into a hosted instance's `data/`
+directory, and a server's `data/library.db` can be imported here.
 
 ### How the picker is wired
 
@@ -190,6 +197,47 @@ copies through the `ContentResolver` — while every decision stays in Dart
 `FlutterActivity` extends plain `Activity`, not `ComponentActivity`, so the
 modern `registerForActivityResult` is unavailable and `startActivityForResult`
 does the job.
+
+The shared library uses the same channel with three more calls: `pickSyncFolder`
+(an `ACTION_OPEN_DOCUMENT_TREE` intent, whose grant is persisted), `syncPull`
+(copy `bibliojules-library.sqlite` out of the granted tree, using
+`DocumentsContract` to find it) and `syncPush` (create it if it is not there
+yet, then copy it back). The tree is never held open; only whole files move.
+
+---
+
+## Sharing the library with your other devices
+
+**Settings → Shared library → Choose folder…** asks Android for a folder once —
+Drive, Downloads, a USB stick, anything the picker offers — and keeps the grant
+across restarts. From then on **Sync now**, and *Sync when the app starts*,
+exchange one file in that folder with the web app and the desktop app.
+
+The file is a **snapshot**, never a live database: the phone's own file stays in
+app storage, and a sync
+
+1. copies the shared snapshot into the app's cache (`syncPull`);
+2. merges it into the local library — the same rules as the server's
+   `app/services/sync.py`, ported statement for statement into
+   `lib/src/local/sync.dart`: the newest edit of each row wins, deletions travel
+   as tombstones, and rows created independently on two devices are married on
+   first contact (statuses by slug, authors and publishers by name, books by
+   ISBN);
+3. writes a timestamped backup of the local library into
+   `<app documents>/libraries/backups/` first (the last ten are kept);
+4. publishes a fresh snapshot back (`syncPush`) — but only when the local
+   library holds something the snapshot did not, so two idle devices do not
+   bounce a file at each other forever.
+
+The snapshot is called `bibliojules-library.sqlite` in the chosen folder. It is a
+plain BiblioJules database minus `users` and `tokens`, plus a `sync_meta` header
+(format, generation, snapshot id, device name) that lets a half-copied file be
+recognised and refused instead of merged. `sync_state.json`, next to the library
+file, holds this device's id and the last snapshot it saw.
+
+All of that runs without a device in `test/saf_sync_test.dart` (a mocked channel
+stands in for Kotlin) and `test/sync_test.dart` (two real SQLite files and one
+shared folder).
 
 ---
 
@@ -223,6 +271,12 @@ python dump_schema.py    # after editing anything in app/models/
 
 Add a column to a model without copying it into `schema.dart` and the mobile
 suite fails.
+
+The schema is at **version 2**, the shared-library shape: every synced row
+carries a `sync_id` (a random id that means the same row on every device) and an
+`updated_at` stamp, and deletions are remembered in `sync_tombstones`. Opening a
+version-1 library runs the `ALTER TABLE`s and then backfills every existing row,
+so an old file becomes shareable without a re-import.
 
 ---
 
@@ -288,6 +342,13 @@ The suite has several layers:
   filtering, sorting, loans, the location tree, statuses, statistics.
 - `library_transfer_test.dart` — export and import, including a server-shaped
   database and, when the working copy is present, the real `data/library.db`.
+- `sync_test.dart` — the shared-library merge, between two real SQLite files:
+  first-contact dedupe, newest-edit-wins, deletes travelling as tombstones, a
+  later edit resurrecting a deleted book, the schema 1 → 2 migration and the
+  snapshot header being validated.
+- `saf_sync_test.dart` — the same thing through Android's folder grant, with a
+  mocked channel standing in for Kotlin: choosing a folder, pulling, pushing,
+  and the errors a revoked grant produces.
 - `lookup_test.dart` — the direct Open Library / Google Books lookup local mode
   uses, against a fake adapter: the provider order, what wins in a merge, and
   what happens when one of them is down.
@@ -327,11 +388,13 @@ mobile/
 │       │   ├── converters.dart    # rows → the API's JSON
 │       │   ├── library_files.dart # where a library file lives, and its name
 │       │   ├── transfer.dart      # export/import over the system file picker
+│       │   ├── sync.dart          # shared-folder snapshots + the merge (port of app/services/sync.py)
+│       │   ├── sync_ids.dart      # the ids that identify a row across devices
 │       │   └── lookup.dart        # Open Library + Google Books, directly
 │       ├── widgets/           # app bar, book tile, cover, form fields…
 │       └── features/          # one file per screen
 ├── android/app/src/main/kotlin/com/bibliojules/mobile/
-│   └── MainActivity.kt        # the file-picker channel
+│   └── MainActivity.kt        # the file-picker + shared-folder channel
 ├── assets/locales/            # a copy of the server's catalogues
 └── test/                      # see above; test/fixtures/ holds the server schema
 ```

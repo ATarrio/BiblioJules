@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../local/library_files.dart';
 import '../local/local_repo.dart';
+import '../local/sync.dart';
 import '../local/transfer.dart';
 import '../theme.dart';
 import 'api_client.dart';
@@ -67,6 +68,25 @@ final localRepoProvider = Provider<LocalRepo>((ref) => LocalRepo());
 final libraryTransferProvider = Provider<LibraryTransfer>(
   (ref) => LibraryTransfer(repo: ref.watch(localRepoProvider)),
 );
+
+/// The folder picker and the questions about a folder grant, on the other side
+/// of the same channel the transfer uses. Separate so a test can hand it a
+/// mocked channel without touching export/import.
+final sharedFolderProvider = Provider<SharedFolder>((ref) => SharedFolder());
+
+/// A sync run against the folder the user chose, or ``null`` when there is
+/// nothing to sync with yet (no folder, or the library lives on a server).
+final librarySyncProvider = Provider<LibrarySync?>((ref) {
+  final prefs = ref.watch(prefsProvider);
+  final uri = prefs.syncFolderUri;
+  if (uri == null) return null;
+  // Only a library kept on the device has a shared folder of its own.
+  if (!ref.watch(sessionProvider).isLocal) return null;
+  return LibrarySync(
+    repo: ref.watch(localRepoProvider),
+    transport: SafSyncTransport(folderUri: uri),
+  );
+});
 
 /// The session restored from disk before the first frame.
 final bootSessionProvider = Provider<SessionState>(

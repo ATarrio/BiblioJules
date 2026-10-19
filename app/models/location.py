@@ -18,9 +18,10 @@ from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import SyncIdMixin, UpdatedAtMixin
 
 
-class Location(Base):
+class Location(SyncIdMixin, UpdatedAtMixin, Base):
     __tablename__ = "locations"
 
     id: Mapped[int] = mapped_column(primary_key=True)

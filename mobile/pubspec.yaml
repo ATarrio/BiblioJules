@@ -1,5 +1,5 @@
 name: bibliojules_mobile
-description: "BiblioJules for Android — a hosted library over the network, or a catalogue of your own kept on the phone."
+description: "BiblioJules for Android — A home library management to keep track of your books, where they are and other information" 
 publish_to: 'none'
 version: 0.1.0+1
 

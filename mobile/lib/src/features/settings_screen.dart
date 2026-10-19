@@ -6,6 +6,7 @@ import '../core/l10n.dart';
 import '../core/prefs.dart';
 import '../core/providers.dart';
 import '../local/library_files.dart';
+import '../local/sync.dart';
 import '../theme.dart';
 import '../widgets/app_bar.dart';
 import '../widgets/feedback.dart';
@@ -28,11 +29,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
   /// …and which of the two it is, so the spinner lands on the right button.
   bool _exporting = false;
+  /// The shared library: the folder's URI and name, and whether a sync runs at
+  /// start-up. Held in state (as well as in the preferences) so the row redraws
+  /// the moment the user picks a folder.
+  String? _syncFolderUri;
+  String? _syncFolderName;
+  bool _syncOnStart = false;
+  bool _syncing = false;
 
   @override
   void initState() {
     super.initState();
     _server = TextEditingController(text: ref.read(sessionProvider).baseUrl);
+    final prefs = ref.read(prefsProvider);
+    _syncFolderUri = prefs.syncFolderUri;
+    _syncFolderName = prefs.syncFolderName;
+    _syncOnStart = prefs.syncOnStart;
+    if (_syncFolderUri != null && _syncFolderName == null) {
+      // Stored by a version that only kept the URI: ask Android what it is.
+      ref.read(sharedFolderProvider).nameOf(_syncFolderUri!).then((name) {
+        if (mounted && name != null) setState(() => _syncFolderName = name);
+      });
+    }
   }
 
   @override
@@ -399,6 +417,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSlate500),
       ),
+      _Section(title: l10n.tr('Shared library')),
+      Card(
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_shared_outlined),
+              title: Text(
+                _syncFolderName ?? l10n.tr('No folder chosen yet'),
+              ),
+              subtitle: Text(
+                _syncFolderUri == null
+                    ? l10n.tr(
+                        'Pick a folder in Drive — or anywhere else that reaches your other devices — to share this library.',
+                      )
+                    : l10n.tr('Snapshots of this library are exchanged through it.'),
+              ),
+              trailing: TextButton(
+                onPressed: _busy || _syncing ? null : _chooseSyncFolder,
+                child: Text(l10n.tr('Choose folder…')),
+              ),
+            ),
+            if (_syncFolderUri != null) ...[
+              const Divider(height: 1),
+              SwitchListTile(
+                value: _syncOnStart,
+                onChanged: _busy || _syncing ? null : _setSyncOnStart,
+                secondary: const Icon(Icons.schedule_outlined),
+                title: Text(l10n.tr('Sync when the app starts')),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.sync),
+                title: Text(l10n.tr('Sync now')),
+                trailing: _syncing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right, color: kSlate500),
+                onTap: _busy || _syncing ? null : _syncNow,
+              ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        l10n.tr(
+          'Every device keeps its own copy of the library. Each sync merges the snapshot in this folder and writes a fresh one, so Google Drive (or Syncthing, or a USB stick) never sees a live database.',
+        ),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSlate500),
+      ),
     ];
   }
 
@@ -459,6 +530,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  // --- the shared library ------------------------------------------------ //
+
+  /// Ask for the folder snapshots are exchanged through, and remember it.
+  Future<void> _chooseSyncFolder() async {
+    final l10n = context.localized;
+    setState(() => _busy = true);
+    try {
+      final choice = await ref.read(sharedFolderProvider).choose();
+      if (!mounted || choice == null) return;
+      await ref.read(prefsProvider).setSyncFolder(choice.uri, name: choice.name);
+      // The sync provider caches the URI it was built with.
+      ref.invalidate(librarySyncProvider);
+      if (!mounted) return;
+      setState(() {
+        _syncFolderUri = choice.uri;
+        _syncFolderName = choice.name.isEmpty ? null : choice.name;
+      });
+      showSnack(context, l10n.tr('Shared folder saved.'));
+    } on Object catch (error) {
+      if (mounted) showSnack(context, describeError(context, error), isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setSyncOnStart(bool value) async {
+    await ref.read(prefsProvider).setSyncOnStart(value);
+    if (mounted) setState(() => _syncOnStart = value);
+  }
+
+  /// Merge whatever the folder holds, then publish what is new here.
+  Future<void> _syncNow() async {
+    final l10n = context.localized;
+    final sync = ref.read(librarySyncProvider);
+    if (sync == null) {
+      showSnack(context, l10n.tr('Choose a shared folder in Settings first.'), isError: true);
+      return;
+    }
+    setState(() => _syncing = true);
+    try {
+      final result = await sync.run();
+      // Books, shelfs and loans may all have moved under the open screens.
+      refreshEverything(ref);
+      if (!mounted) return;
+      showSnack(context, _describeSync(l10n, result));
+    } on Object catch (error) {
+      if (mounted) showSnack(context, describeError(context, error), isError: true);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  /// One line describing a sync, in the same words the other clients use.
+  String _describeSync(L10n l10n, SyncResult result) {
+    final merge = result.merge;
+    final parts = <String>[];
+    if (merge != null && merge.changes > 0) {
+      parts.add(
+        l10n.tr('Merged %(changes)s change(s) from %(device)s.', {
+          'changes': '${merge.changes}',
+          'device': merge.sourceDevice.isEmpty
+              ? l10n.tr('another device')
+              : merge.sourceDevice,
+        }),
+      );
+    } else if (merge != null) {
+      parts.add(l10n.tr('Already up to date.'));
+    }
+    parts.add(
+      result.pushed
+          ? l10n.tr('Published a fresh snapshot.')
+          : l10n.tr('Nothing needed publishing.'),
+    );
+    if ((merge?.conflicts.length ?? 0) > 0) {
+      parts.add(
+        l10n.tf('%s note(s) about edits made on both devices are in the sync report.', [
+          '${merge!.conflicts.length}',
+        ]),
+      );
+    }
+    return parts.join(' ');
   }
 }
 

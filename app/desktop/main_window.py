@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from .. import i18n, preferences
 from ..config import settings
 from ..i18n import _
+from ..services import sync as sync_service
 from .catalog import CatalogView
 from .dashboard import DashboardView
 from .discover import DiscoverView
@@ -30,6 +31,7 @@ from .repo import AuthError, LocalRepo, RemoteRepo, RepoError, current_repo, set
 from .settings_dialog import SettingsDialog
 from .statuses_view import StatusesView
 from .theme import LOGO_SVG, apply_theme
+from .workers import run_blocking
 
 # (emoji, English source label) — order mirrors the web app's sidebar.
 # Labels are translated when the UI is built, so a language switch can rebuild it.
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
         # before any view asks the data source for rows.
         self._ready = False
         self._settings_open = False
+        self._sync_running = False
         self._build_menu()
         self._build_ui()
         QTimer.singleShot(0, self._startup_check)
@@ -186,6 +189,8 @@ class MainWindow(QMainWindow):
         )
         # Recolour before rebuilding: the new widgets are built (and the old ones
         # torn down) under the theme that was just chosen.
+        preferences.set_sync_file(data.get("sync_file") or "")
+        preferences.set_sync_on_start(bool(data.get("sync_on_start")))
         color_theme = preferences.set_color_theme(
             data.get("color_theme") or preferences.get_color_theme()
         )
@@ -284,6 +289,78 @@ class MainWindow(QMainWindow):
         except RepoError as exc:
             self.statusBar().showMessage(str(exc), 8000)
 
+    # -- shared library ----------------------------------------------------- #
+    def _sync_library(self) -> None:
+        if self._sync_running:
+            return
+        if preferences.get_mode() == preferences.MODE_REMOTE:
+            QMessageBox.information(
+                self,
+                _("Shared library"),
+                _("The hosted server keeps its own shared folder. Open its admin page to sync it."),
+            )
+            return
+        folder = preferences.get_sync_file()
+        if not folder:
+            QMessageBox.information(
+                self,
+                _("Shared library"),
+                _("Choose a shared folder in Settings first."),
+            )
+            self._open_settings()
+            return
+        self._sync_running = True
+        self.sync_action.setEnabled(False)
+        self.statusBar().showMessage(_("Syncing with the shared folder…"))
+        # Copying and merging whole files takes long enough to notice, so keep
+        # it off the GUI thread.
+        run_blocking(sync_service.sync_now, self._sync_done, self._sync_failed, target=folder)
+
+    def _sync_done(self, result) -> None:
+        self._sync_running = False
+        self.sync_action.setEnabled(True)
+        self.refresh_all()
+
+        merge = result.merge
+        lines: list[str] = []
+        if merge is not None and merge.changes:
+            lines.append(
+                _("Merged %(changes)s change(s) from %(device)s.")
+                % {
+                    "changes": merge.changes,
+                    "device": merge.source_device or _("another device"),
+                }
+            )
+            for bucket, label in (
+                (merge.added, _("Added")),
+                (merge.updated, _("Updated")),
+                (merge.deleted, _("Deleted")),
+            ):
+                parts = ", ".join(
+                    f"{count} {table}" for table, count in sorted(bucket.items())
+                )
+                if parts:
+                    lines.append(f"{label}: {parts}")
+        elif merge is not None:
+            lines.append(_("The shared file had nothing new."))
+        if result.pushed:
+            lines.append(_("Published a fresh snapshot."))
+        if merge is not None and merge.conflicts:
+            lines.append("")
+            lines.append(_("Edits made on both devices:"))
+            lines.extend(f"• {note}" for note in merge.conflicts[:5])
+        if not lines:
+            lines.append(_("Already up to date."))
+
+        self.statusBar().showMessage(lines[0], 10000)
+        QMessageBox.information(self, _("Shared library"), "\n".join(lines))
+
+    def _sync_failed(self, message: str) -> None:
+        self._sync_running = False
+        self.sync_action.setEnabled(True)
+        self.statusBar().showMessage(message, 15000)
+        QMessageBox.warning(self, _("Shared library"), message)
+
     # -- menu --------------------------------------------------------------- #
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu(_("&File"))
@@ -291,6 +368,11 @@ class MainWindow(QMainWindow):
         settings_action.setShortcut("Ctrl+,")
         settings_action.triggered.connect(self._open_settings)
         file_menu.addAction(settings_action)
+
+        self.sync_action = QAction(_("&Sync library now…"), self)
+        self.sync_action.setShortcut("Ctrl+Shift+S")
+        self.sync_action.triggered.connect(self._sync_library)
+        file_menu.addAction(self.sync_action)
         file_menu.addSeparator()
         quit_action = QAction(_("&Quit"), self)
         quit_action.setShortcut("Ctrl+Q")

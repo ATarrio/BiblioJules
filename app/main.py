@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
-from .database import Base, SessionLocal, engine, ensure_schema
+from .database import Base, SessionLocal, engine, ensure_sync_schema
 from .dependencies import (
     AuthenticationRequired,
     PermissionDenied,
@@ -35,10 +35,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on first run; any columns added to the models since an
-    # older database was created are applied by ensure_schema() below.
+    # older database was created are applied by ensure_sync_schema() below.
     Base.metadata.create_all(bind=engine)
-    # Bring an older database up to date with any new columns.
-    ensure_schema()
+    # New columns, sync ids and the indexes a merge relies on.
+    ensure_sync_schema()
 
     # Seed the built-in statuses (available, reading, lent, wishlist...).
     db = SessionLocal()
@@ -50,6 +50,18 @@ async def lifespan(app: FastAPI):
         prune_orphans(db)
     finally:
         db.close()
+
+    # Optional: merge the shared snapshot once at start-up. Failures must never
+    # stop the app from opening — the library is more important than the sync.
+    if settings.sync_on_start:
+        from .services import sync as sync_service
+
+        try:
+            sync_service.sync_now()
+        except sync_service.SyncError as exc:
+            logging.warning("Shared library not synced: %s", exc)
+        except Exception:  # pragma: no cover - unexpected filesystem trouble
+            logging.exception("Shared library sync failed")
 
     yield
 

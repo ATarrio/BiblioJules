@@ -13,6 +13,7 @@ from .loan import Loan
 from .location import Location
 from .publisher import Publisher
 from .status import Status
+from .sync import SyncTombstone
 from .token import Token
 from .user import User
 
@@ -23,6 +24,7 @@ __all__ = [
     "Location",
     "Publisher",
     "Status",
+    "SyncTombstone",
     "Token",
     "User",
     "book_authors",

@@ -14,9 +14,14 @@ library;
 String sqliteDateTime(DateTime value) {
   final utc = value.toUtc();
   String two(int part) => part.toString().padLeft(2, '0');
+  // Dart splits the sub-second part in two: ``millisecond`` (0–999) and
+  // ``microsecond``, which is only the remainder below a millisecond. Writing
+  // the latter alone would throw the milliseconds away, so stamps a fraction of
+  // a millisecond apart could come out in the wrong order.
+  final micros = utc.millisecond * 1000 + utc.microsecond;
   return '${utc.year.toString().padLeft(4, '0')}-${two(utc.month)}-${two(utc.day)} '
       '${two(utc.hour)}:${two(utc.minute)}:${two(utc.second)}.'
-      '${utc.microsecond.toString().padLeft(6, '0')}';
+      '${micros.toString().padLeft(6, '0')}';
 }
 
 /// The timestamp to stamp on a row that is being written right now.
