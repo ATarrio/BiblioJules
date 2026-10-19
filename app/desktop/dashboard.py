@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .cover import CoverImage
 from .repo import get_repo
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, BRAND_500, EMERALD, VIOLET
@@ -25,6 +26,8 @@ from .. import i18n
 from ..i18n import _
 
 _COLUMNS = 4
+#: Cover thumbnail width on a recent-book card (2:3, so ~1.5× tall).
+_COVER_WIDTH = 84
 
 
 def _clear(layout) -> None:
@@ -207,9 +210,20 @@ class DashboardView(QWidget):
     def _book_card(self, row: dict) -> QFrame:
         frame = BookCard(row["id"])
         frame.activated.connect(self._open_details)
-        layout = QVBoxLayout(frame)
+        layout = QHBoxLayout(frame)
         layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(4)
+        layout.setSpacing(12)
+
+        # Cover on the left, details on the right — the same shape as the
+        # catalog rows on the phone and the book-details dialog.
+        cover = CoverImage(_COVER_WIDTH)
+        # No title in the fallback: at this size the text would be cramped, and
+        # the title is already printed right next to the thumbnail.
+        cover.load(row.get("cover_url"))
+        layout.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
+
+        column = QVBoxLayout()
+        column.setSpacing(4)
 
         status = row.get("status")
         title = QLabel(row.get("title") or _("Untitled"))
@@ -231,8 +245,8 @@ class DashboardView(QWidget):
         authors.setObjectName("Muted")
         authors.setWordWrap(True)
 
-        layout.addLayout(top)
-        layout.addWidget(authors)
+        column.addLayout(top)
+        column.addWidget(authors)
 
         facts: list[str] = []
         if row.get("published_year"):
@@ -247,7 +261,9 @@ class DashboardView(QWidget):
             meta = QLabel("  ·  ".join(facts))
             meta.setObjectName("Dim")
             meta.setWordWrap(True)
-            layout.addWidget(meta)
+            column.addWidget(meta)
+        column.addStretch(1)
+        layout.addLayout(column, 1)
         # Let clicks fall through to the card itself, wherever they land.
         for label in frame.findChildren(QLabel):
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
