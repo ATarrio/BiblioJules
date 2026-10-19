@@ -54,7 +54,7 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
     setState(() => _busy = true);
     try {
       await ref
-          .read(apiClientProvider)
+          .read(repoProvider)
           .lendBook(
             book.id,
             borrowerName: _borrower.text.trim(),
@@ -79,7 +79,7 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
     setState(() => _busy = true);
     try {
       await ref
-          .read(apiClientProvider)
+          .read(repoProvider)
           .returnBook(book.id, restoreStatus: _restoreStatus);
       _afterWrite(message);
     } on ApiAuthException catch (error) {

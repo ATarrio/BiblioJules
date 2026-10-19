@@ -62,7 +62,10 @@ class LibraryAppBar extends ConsumerWidget implements PreferredSizeWidget {
             icon: const Icon(Icons.sync),
             onPressed: () {
               refreshEverything(ref);
-              showSnack(context, l10n.tr('Reloading from the server…'));
+              // A library on this device has nowhere to reload *from*.
+              if (!session.isLocal) {
+                showSnack(context, l10n.tr('Reloading from the server…'));
+              }
             },
           ),
         PopupMenuButton<String>(
@@ -130,17 +133,21 @@ class LibraryAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 title: Text(l10n.tr('About')),
               ),
             ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'signout',
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.logout),
-                title: Text(l10n.tr('Sign out')),
-                subtitle: session.user == null ? null : Text(session.user!.shown),
+            // A local library has no account to end: the way out of it is the
+            // switch on the settings screen.
+            if (!session.isLocal) ...[
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'signout',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.logout),
+                  title: Text(l10n.tr('Sign out')),
+                  subtitle: session.user == null ? null : Text(session.user!.shown),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ],

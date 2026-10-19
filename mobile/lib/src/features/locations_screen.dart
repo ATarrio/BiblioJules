@@ -119,7 +119,7 @@ class LocationsScreen extends ConsumerWidget {
                           final done = await runGuarded(
                             context,
                             ref,
-                            () => ref.read(apiClientProvider).deleteLocation(location.id),
+                            () => ref.read(repoProvider).deleteLocation(location.id),
                           );
                           if (done == null) return;
                           invalidateLocations(ref);
@@ -236,7 +236,7 @@ class _LocationDialogState extends ConsumerState<_LocationDialog> {
       return;
     }
     setState(() => _busy = true);
-    final api = ref.read(apiClientProvider);
+    final api = ref.read(repoProvider);
     try {
       if (widget.location == null) {
         await api.createLocation(

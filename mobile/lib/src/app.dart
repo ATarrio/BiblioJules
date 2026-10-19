@@ -33,7 +33,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   // we ping one whenever the session (sign-in/sign-out, new server) changes.
   final refresh = ValueNotifier<int>(0);
   ref.listen(sessionProvider, (previous, next) {
-    if (previous?.token != next.token || previous?.baseUrl != next.baseUrl) {
+    if (previous?.token != next.token ||
+        previous?.baseUrl != next.baseUrl ||
+        previous?.isLocal != next.isLocal ||
+        previous?.localLibraryName != next.localLibraryName) {
       refresh.value++;
     }
   });

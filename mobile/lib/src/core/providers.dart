@@ -8,9 +8,13 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../local/library_files.dart';
+import '../local/local_repo.dart';
+import '../local/transfer.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
 import 'l10n.dart';
+import 'library_repo.dart';
 import 'models/models.dart';
 import 'prefs.dart';
 import 'secure_store.dart';
@@ -37,6 +41,32 @@ final apiClientProvider = Provider<ApiClient>(
   (ref) => throw UnimplementedError('apiClientProvider must be overridden in main()'),
 );
 
+/// Where every screen reads and writes its data.
+///
+/// Sign-in, the token and the server address stay on [apiClientProvider]: those
+/// only exist in server mode, whereas this provider is the *catalogue* that
+/// both modes can serve.
+final repoProvider = Provider<LibraryRepo>((ref) {
+  final session = ref.watch(sessionProvider);
+  if (session.isLocal) return ref.watch(localRepoProvider);
+  return ref.watch(apiClientProvider);
+});
+
+/// The library kept on the device itself.
+///
+/// Created once and reused, because it owns an open SQLite connection;
+/// ``main()`` builds the instance (so the file is open before the first frame)
+/// and overrides this provider with it. Whether it is *used* is the session's
+/// decision, and [LocalRepo.open]/[LocalRepo.close] decide which file it points
+/// at.
+final localRepoProvider = Provider<LocalRepo>((ref) => LocalRepo());
+
+/// Moves the on-device library in and out of the app's private storage, via the
+/// system file picker (where Google Drive shows up as just another place).
+final libraryTransferProvider = Provider<LibraryTransfer>(
+  (ref) => LibraryTransfer(repo: ref.watch(localRepoProvider)),
+);
+
 /// The session restored from disk before the first frame.
 final bootSessionProvider = Provider<SessionState>(
   (ref) => throw UnimplementedError('bootSessionProvider must be overridden in main()'),
@@ -55,6 +85,8 @@ class SessionState {
     this.busy = false,
     this.error,
     this.notice,
+    this.isLocal = false,
+    this.localLibraryName,
   });
 
   /// The library server, already normalised (``https://host``, no trailing /).
@@ -73,10 +105,18 @@ class SessionState {
   /// A one-off message to show on the login screen (e.g. an expired session).
   final String? notice;
 
-  bool get signedIn => token != null && token!.isNotEmpty;
+  /// True when the catalogue lives on this device instead of on a server.
+  final bool isLocal;
+
+  /// The on-device library's name (only meaningful when [isLocal]).
+  final String? localLibraryName;
+
+  /// There is a catalogue to read: either an account somewhere, or a local
+  /// library that needs no account at all.
+  bool get signedIn => isLocal || (token != null && token!.isNotEmpty);
 
   /// True once a server address has been entered, signed in or not.
-  bool get configured => baseUrl.isNotEmpty;
+  bool get configured => baseUrl.isNotEmpty || isLocal;
 
   SessionState copyWith({
     String? baseUrl,
@@ -85,6 +125,8 @@ class SessionState {
     bool? busy,
     String? error,
     String? notice,
+    bool? isLocal,
+    String? localLibraryName,
     bool clearToken = false,
     bool clearUser = false,
     bool clearError = false,
@@ -97,6 +139,8 @@ class SessionState {
       busy: busy ?? this.busy,
       error: clearError ? null : (error ?? this.error),
       notice: clearNotice ? null : (notice ?? this.notice),
+      isLocal: isLocal ?? this.isLocal,
+      localLibraryName: localLibraryName ?? this.localLibraryName,
     );
   }
 }
@@ -106,6 +150,7 @@ class SessionController extends Notifier<SessionState> {
   SessionState build() => ref.watch(bootSessionProvider);
 
   ApiClient get _api => ref.read(apiClientProvider);
+  LocalRepo get _local => ref.read(localRepoProvider);
   AppPrefs get _prefs => ref.read(prefsProvider);
   SecureStore get _store => ref.read(secureStoreProvider);
 
@@ -129,6 +174,11 @@ class SessionController extends Notifier<SessionState> {
       await _store.writeToken(result.token);
       await _prefs.setBaseUrl(url);
       await _prefs.setUsername(username);
+      // Signing in commits to the server, so it becomes the library. (Reached
+      // only when the device library is *not* the one in use: local mode is
+      // already "signed in" and never shows this form. This matters after a
+      // local library failed to open, when the mode preference is still local.)
+      await _prefs.setMode(LibraryMode.server);
       state = SessionState(baseUrl: url, token: result.token, user: result.user);
       return true;
     } on ApiException catch (error) {
@@ -150,11 +200,18 @@ class SessionController extends Notifier<SessionState> {
     }
     _api.setToken(null);
     await _store.writeToken(null);
-    state = SessionState(baseUrl: state.baseUrl);
+    // A device library has no account to sign out of, so it stays in use.
+    state = SessionState(
+      baseUrl: state.baseUrl,
+      isLocal: state.isLocal,
+      localLibraryName: state.localLibraryName,
+    );
   }
 
   /// The server rejected our token mid-session: drop it and say so.
   Future<void> handleRejectedToken([String? message]) async {
+    // A library on this device has no token to reject.
+    if (state.isLocal) return;
     if (!state.signedIn) return;
     _api.setToken(null);
     await _store.writeToken(null);
@@ -178,7 +235,8 @@ class SessionController extends Notifier<SessionState> {
 
   /// Refresh the cached account after a settings change elsewhere.
   Future<void> refreshAccount() async {
-    if (!state.signedIn) return;
+    // In local mode there is no account to refresh, and no server to ask.
+    if (!state.signedIn || state.isLocal) return;
     try {
       final user = await _api.me();
       state = state.copyWith(user: user);
@@ -189,6 +247,60 @@ class SessionController extends Notifier<SessionState> {
     }
   }
 
+  // --- local mode --------------------------------------------------------- //
+
+  /// Switch to the library kept on this device, creating [name] if it is new.
+  ///
+  /// Any server token is *kept* rather than revoked, so switching back to the
+  /// hosted library does not mean signing in again.
+  Future<bool> useLocalLibrary(String name) async {
+    final label = name.trim().isEmpty ? kDefaultLibraryName : name.trim();
+    state = state.copyWith(busy: true, clearError: true, clearNotice: true);
+    try {
+      await _local.open(label);
+    } on Object catch (error) {
+      state = state.copyWith(busy: false, error: describeLocalError(error));
+      return false;
+    }
+    await _prefs.setMode(LibraryMode.local);
+    await _prefs.setLocalLibraryName(label);
+    state = SessionState(
+      baseUrl: state.baseUrl,
+      token: state.token,
+      user: state.user,
+      isLocal: true,
+      localLibraryName: label,
+    );
+    return true;
+  }
+
+  /// Go back to the hosted library, closing the file on this device.
+  Future<void> useServerLibrary() async {
+    if (!state.isLocal) return;
+    await _local.close();
+    await _prefs.setMode(LibraryMode.server);
+    state = SessionState(
+      baseUrl: state.baseUrl,
+      token: state.token,
+      user: state.user,
+    );
+  }
+
+  /// Rename the on-device library, moving its file when the slug changes.
+  Future<bool> renameLocalLibrary(String name) async {
+    final label = name.trim();
+    if (label.isEmpty || label == state.localLibraryName) return true;
+    try {
+      await _local.renameTo(label);
+    } on ApiException catch (error) {
+      state = state.copyWith(error: error.message);
+      return false;
+    }
+    await _prefs.setLocalLibraryName(label);
+    state = state.copyWith(localLibraryName: label, clearError: true);
+    return true;
+  }
+
   void clearNotice() => state = state.copyWith(clearNotice: true);
 }
 
@@ -197,11 +309,21 @@ final sessionProvider = NotifierProvider<SessionController, SessionState>(
 );
 
 /// Changes whenever the identity or the server changes, so cached data is
-/// dropped on sign-in/sign-out and when the app is pointed elsewhere.
+/// dropped on sign-in/sign-out, when the app is pointed elsewhere, and when it
+/// switches between the device and a server.
 final sessionKeyProvider = Provider<String>((ref) {
   final session = ref.watch(sessionProvider);
-  return '${session.baseUrl}|${session.token ?? ''}';
+  if (session.isLocal) return 'local|${session.localLibraryName ?? ''}';
+  return 'server|${session.baseUrl}|${session.token ?? ''}';
 });
+
+/// A message for a failure to open or move a library file.
+///
+/// The technical detail is kept: a mangled SQLite file is something the user
+/// needs to be able to report.
+String describeLocalError(Object error) => error is ApiException
+    ? error.message
+    : 'That library could not be opened: $error';
 
 // --------------------------------------------------------------------------- //
 // Language
@@ -215,6 +337,10 @@ class LanguageController extends Notifier<String> {
     await ref.read(prefsProvider).setLanguage(language);
     // The server writes its own messages in the language the app asks for.
     ref.read(apiClientProvider).setLanguage(language);
+    // So does the on-device store, for the few messages it writes itself.
+    ref
+        .read(localRepoProvider)
+        .useMessages(ref.read(catalogCacheProvider).forLanguage(language));
     state = language;
   }
 }
@@ -384,7 +510,7 @@ final catalogQueryProvider =
 final booksProvider = FutureProvider<List<Book>>((ref) {
   ref.watch(sessionKeyProvider);
   final query = ref.watch(catalogQueryProvider);
-  final api = ref.watch(apiClientProvider);
+  final api = ref.watch(repoProvider);
   return api.listBooks(
     search: query.search.isEmpty ? null : query.search,
     statusId: query.statusId,
@@ -401,42 +527,42 @@ final booksProvider = FutureProvider<List<Book>>((ref) {
 
 final bookProvider = FutureProvider.family<Book, int>((ref, id) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).getBook(id);
+  return ref.watch(repoProvider).getBook(id);
 }, retry: _noRetry, isAutoDispose: true);
 
 final bookLoansProvider = FutureProvider.family<List<Loan>, int>((ref, bookId) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).bookLoans(bookId);
+  return ref.watch(repoProvider).bookLoans(bookId);
 }, retry: _noRetry, isAutoDispose: true);
 
 final locationsProvider = FutureProvider<List<Location>>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).listLocations();
+  return ref.watch(repoProvider).listLocations();
 }, retry: _noRetry, isAutoDispose: true);
 
 final statusesProvider = FutureProvider<List<Status>>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).listStatuses();
+  return ref.watch(repoProvider).listStatuses();
 }, retry: _noRetry, isAutoDispose: true);
 
 final sagasProvider = FutureProvider<List<String>>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).listSagas();
+  return ref.watch(repoProvider).listSagas();
 }, retry: _noRetry, isAutoDispose: true);
 
 final authorsProvider = FutureProvider<List<RefItem>>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).listAuthors();
+  return ref.watch(repoProvider).listAuthors();
 }, retry: _noRetry, isAutoDispose: true);
 
 final publishersProvider = FutureProvider<List<RefItem>>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).listPublishers();
+  return ref.watch(repoProvider).listPublishers();
 }, retry: _noRetry, isAutoDispose: true);
 
 final dashboardProvider = FutureProvider<DashboardData>((ref) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).dashboard();
+  return ref.watch(repoProvider).dashboard();
 }, retry: _noRetry, isAutoDispose: true);
 
 // --------------------------------------------------------------------------- //
@@ -444,12 +570,12 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) {
 // --------------------------------------------------------------------------- //
 final isbnLookupProvider = FutureProvider.family<SearchResult?, String>((ref, isbn) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).lookupIsbn(isbn);
+  return ref.watch(repoProvider).lookupIsbn(isbn);
 }, retry: _noRetry, isAutoDispose: true);
 
 final onlineSearchProvider = FutureProvider.family<List<SearchResult>, String>((ref, query) {
   ref.watch(sessionKeyProvider);
-  return ref.watch(apiClientProvider).searchBooks(query);
+  return ref.watch(repoProvider).searchBooks(query);
 }, retry: _noRetry, isAutoDispose: true);
 
 // --------------------------------------------------------------------------- //

@@ -10,6 +10,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'l10n.dart';
 
+/// Where the app's catalogue comes from.
+///
+/// Both modes are first-class: local mode is a whole library in a file on the
+/// phone (see ``LocalRepo``), server mode is the shared library on a host. The
+/// default is [server], so an installation that predates local mode keeps
+/// behaving exactly as it did.
+enum LibraryMode {
+  local,
+  server,
+}
+
 class AppPrefs {
   AppPrefs(this._prefs);
 
@@ -20,9 +31,38 @@ class AppPrefs {
   static const _kUsername = 'account_username';
   static const _kSort = 'catalog_sort';
   static const _kDirection = 'catalog_dir';
+  static const _kMode = 'library_mode';
+  static const _kLocalLibrary = 'local_library_name';
 
   static Future<AppPrefs> load() async {
     return AppPrefs(await SharedPreferences.getInstance());
+  }
+
+  /// Where the catalogue is read from. Defaults to [LibraryMode.server].
+  LibraryMode get mode =>
+      _prefs.getString(_kMode) == 'local' ? LibraryMode.local : LibraryMode.server;
+
+  Future<void> setMode(LibraryMode mode) async {
+    if (mode == LibraryMode.server) {
+      await _prefs.remove(_kMode);
+      return;
+    }
+    await _prefs.setString(_kMode, 'local');
+  }
+
+  /// The name the user gave the on-device library, or ``null`` when it has
+  /// never been named. The name doubles as the file name (slugified).
+  String? get localLibraryName {
+    final value = _prefs.getString(_kLocalLibrary);
+    return (value == null || value.trim().isEmpty) ? null : value;
+  }
+
+  Future<void> setLocalLibraryName(String? name) async {
+    if (name == null || name.trim().isEmpty) {
+      await _prefs.remove(_kLocalLibrary);
+      return;
+    }
+    await _prefs.setString(_kLocalLibrary, name.trim());
   }
 
   /// The library server the app points at, or ``null`` before it is set.

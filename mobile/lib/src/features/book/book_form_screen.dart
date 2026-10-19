@@ -110,7 +110,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final book = await ref.read(apiClientProvider).getBook(widget.bookId!);
+      final book = await ref.read(repoProvider).getBook(widget.bookId!);
       if (!mounted) return;
       setState(() {
         _title.text = book.title;
@@ -175,7 +175,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
-    final api = ref.read(apiClientProvider);
+    final api = ref.read(repoProvider);
     try {
       if (_isEdit) {
         await api.updateBook(widget.bookId!, _payload());
@@ -203,7 +203,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       return;
     }
     setState(() => _lookingUp = true);
-    final api = ref.read(apiClientProvider);
+    final api = ref.read(repoProvider);
     try {
       final existing = await api.findByIsbn(isbn);
       if (existing != null && existing.id != widget.bookId) {

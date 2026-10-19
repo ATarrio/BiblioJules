@@ -1,5 +1,5 @@
 name: bibliojules_mobile
-description: "BiblioJules for Android — a thin client for a hosted BiblioJules library."
+description: "BiblioJules for Android — a hosted library over the network, or a catalogue of your own kept on the phone."
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -19,12 +19,18 @@ dependencies:
   go_router: ^18.1.0
   intl: ^0.20.3
   mobile_scanner: ^7.4.2
+  # The on-device library (local mode) is a single SQLite file.
+  path_provider: ^2.1.6
   shared_preferences: ^2.5.6
+  sqflite: ^2.4.4+2
 
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
+  # Lets the local store be tested with `flutter test` on a desktop, using the
+  # system SQLite instead of the Android plugin.
+  sqflite_common_ffi: ^2.4.4
 
 flutter:
   uses-material-design: true

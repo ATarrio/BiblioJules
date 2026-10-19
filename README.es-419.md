@@ -77,7 +77,8 @@ tres usan el mismo catálogo protegido con cuentas.
   escritorio y el teléfono.
 - **Tres interfaces, una biblioteca.** El navegador, una ventana nativa de
   escritorio con modos de base de datos local y remota, y una app nativa de
-  Android para el teléfono.
+  Android que puede guardar su propia biblioteca en el teléfono o comunicarse
+  con una alojada.
 
 ---
 
@@ -267,22 +268,51 @@ permisos `0600`: mantenlo fuera del control de versiones (`data/` ya lo está).
 
 ## App de Android (opcional)
 
-También hay una app **nativa de Android** (Flutter) para el teléfono. Es un
-cliente liviano para una biblioteca *alojada*: no guarda **ninguna base de datos
-propia**, así que siempre necesita la dirección de un servidor BiblioJules en
-funcionamiento y una cuenta en él. Apúntala al servidor, inicia sesión una vez y
-el token queda guardado en el *keystore* de Android.
+También hay una app **nativa de Android** (Flutter) para el teléfono. Funciona
+en dos modos, se elige en la pantalla de inicio de sesión y se cambia cuando
+quieras en **Configuración**:
+
+- **Una biblioteca en este teléfono** — toda la colección vive en un único
+  archivo SQLite en el almacenamiento propio de la app. Sin cuenta, sin servidor
+  y sin red: el panel, la búsqueda, los filtros, los estantes, los estados y los
+  préstamos funcionan en un avión. Solo **Descubrir** y las búsquedas por ISBN
+  necesitan conexión, y le preguntan directamente a Open Library y a Google Books.
+- **Un servidor** — un cliente liviano para una biblioteca *alojada*: no guarda
+  base de datos propia, cada pantalla lee y escribe por la API JSON, y un
+  préstamo que registres aquí aparece enseguida en el navegador.
+
+Cambiar de modo conserva los dos: el archivo queda en el teléfono y el token
+queda en el *keystore*, así que ir y volver no exige iniciar sesión otra vez.
 
 ```bash
 cd mobile
 flutter pub get
-flutter run --release      # o bien: flutter build apk
+flutter run --release      # o bien: flutter build apk --split-per-abi
 ```
 
-La app tiene las mismas funciones que las versiones web y de escritorio —panel,
-catálogo con búsqueda y filtros, escaneo de ISBN, ubicaciones, estados,
+Los dos modos tienen las mismas funciones que las versiones web y de escritorio
+—panel, catálogo con búsqueda y filtros, escaneo de ISBN, ubicaciones, estados,
 préstamos, historial de préstamos y búsqueda en línea—, todo menos la gestión de
 usuarios, que sigue siendo exclusiva del administrador en la web.
+
+### Mover una biblioteca entre el teléfono y un servidor
+
+La sección local de **Configuración** puede **exportar** la biblioteca del
+teléfono e **importar** otra. Las dos pasan por el selector de archivos de
+Android, así que el destino puede ser Descargas, un pendrive o una carpeta de
+**Google Drive**, sin configuración extra.
+
+- **Exportar** escribe un único archivo `.sqlite` autocontenido. Déjalo en el
+  directorio `data/` de una instancia alojada y el servidor ya tiene la
+  colección.
+- **Importar** toma un archivo —una exportación del teléfono, o el
+  `data/library.db` de un servidor, con sus cuentas y todo— y lo convierte en la
+  biblioteca de este teléfono. Nada se fusiona: la biblioteca actual se
+  reemplaza.
+
+No hay sincronización, a propósito. Exportar e importar son la vía de traslado,
+porque dos copias de una biblioteca que se separan en silencio son peores que un
+traslado explícito.
 
 - **Emulador:** usa `http://10.0.2.2:8000` como URL del servidor para llegar a un
   servidor que corre en la computadora anfitriona.
@@ -292,9 +322,8 @@ usuarios, que sigue siendo exclusiva del administrador en la web.
   está habilitado únicamente para las compilaciones de depuración, así puedes
   desarrollar contra un servidor local sin debilitar la app real.
 
-Requiere el **SDK de Flutter 3.47+** y el SDK de Android; no necesita Python ni
-base de datos. Consulta [`mobile/README.md`](mobile/README.md) para más
-detalles.
+Requiere el **SDK de Flutter 3.47+** y el SDK de Android; no necesita Python en
+el teléfono. Consulta [`mobile/README.md`](mobile/README.md) para más detalles.
 
 ---
 
@@ -357,9 +386,9 @@ detalles.
 │       ├── dialogs.py     #   diálogos de alta/edición de libro, préstamo, ubicación, estado
 │       ├── db.py  workers.py  util.py
 │       └── ...
-├── mobile/                # App de Android con Flutter (cliente liviano, sin base local)
+├── mobile/                # App de Android con Flutter (biblioteca propia o servidor)
 │   ├── lib/
-│   │   ├── main.dart      #   carga preferencias + catálogos + token y arranca
+│   │   ├── main.dart      #   abre la biblioteca + preferencias/catálogos y arranca
 │   │   └── src/
 │   │       ├── app.dart   #   router + guarda de inicio de sesión
 │   │       ├── core/      #   cliente de API, providers, modelos, l10n
@@ -373,6 +402,7 @@ detalles.
 ├── migrations/            # Migraciones de Alembic (evolución del esquema)
 ├── run.py                 # Lanzador web
 ├── desktop.py             # Lanzador de escritorio
+├── dump_schema.py         # Vuelca el esquema del servidor para la verificación de la app de Android
 ├── requirements.txt
 ├── requirements-desktop.txt
 └── .env.example
@@ -455,6 +485,19 @@ alembic upgrade head
 
 Omitir el sello es lo que produce «table authors already exists» en una
 biblioteca existente.
+
+> La app de Android guarda su propia copia de este esquema
+> (`mobile/lib/src/local/schema.dart`) para poder funcionar sin ningún servidor.
+> Después de editar algo en `app/models/`, actualiza el archivo de referencia
+> con el que se compara esa copia:
+>
+> ```bash
+> python dump_schema.py
+> ```
+>
+> Así, `mobile/test/schema_parity_test.dart` falla si la copia del teléfono se
+> desvió: los dos esquemas deben seguir siendo intercambiables, porque un
+> archivo exportado viaja entre ellos.
 
 ---
 
@@ -539,5 +582,7 @@ app/locales/es-419.json   # Español (Latinoamérica)
 - La app está pensada para ser compartida en un hogar. Ahora incluye cuentas, así
   que es segura para alojar —pero lee *Alojarla de forma segura* más arriba antes
   de exponerla a internet (HTTPS, `COOKIE_SECURE` y no dejes `/docs` abierto).
-- Todo es local: tus datos viven únicamente en el archivo de tu base de datos (y
-  las búsquedas en línea solo envían el ISBN que escaneas).
+- Todo es local: tus datos viven únicamente en el archivo de tu base de datos (en
+  el teléfono, en el archivo de biblioteca dentro del almacenamiento privado de
+  la app). Las búsquedas en línea solo envían el ISBN que escaneas o las palabras
+  que buscas.

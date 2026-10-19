@@ -10,6 +10,7 @@ import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 
 import 'api_exception.dart';
+import 'library_repo.dart';
 import 'models/models.dart';
 
 /// Add a scheme to a bare host and drop any trailing slash.
@@ -59,7 +60,9 @@ String deviceLabel() {
   }
 }
 
-class ApiClient {
+/// The catalogue half of the client (see [LibraryRepo]); the session half
+/// (sign in, tokens, server address) is specific to talking to a server.
+class ApiClient implements LibraryRepo {
   ApiClient({String baseUrl = '', String? token, Dio? dio})
     : _dio =
           dio ??
@@ -221,6 +224,7 @@ class ApiClient {
   }
 
   // --- books -------------------------------------------------------------- //
+  @override
   Future<List<Book>> listBooks({
     String? search,
     int? statusId,
@@ -254,12 +258,14 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<Book> getBook(int id) async {
     final response = await _get('/api/books/$id');
     return Book.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// ``null`` when no book carries [isbn] (used to spot duplicates).
+  @override
   Future<Book?> findByIsbn(String isbn) async {
     try {
       final response = await _get('/api/books/by-isbn/${Uri.encodeComponent(isbn)}');
@@ -269,6 +275,7 @@ class ApiClient {
     }
   }
 
+  @override
   Future<List<Loan>> bookLoans(int bookId) async {
     final response = await _get('/api/books/$bookId/loans');
     return (response.data as List)
@@ -276,21 +283,25 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<Book> createBook(Map<String, dynamic> payload) async {
     final response = await _send('POST', '/api/books', body: payload);
     return Book.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<Book> updateBook(int id, Map<String, dynamic> payload) async {
     final response = await _send('PUT', '/api/books/$id', body: payload);
     return Book.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<bool> deleteBook(int id) async {
     await _send('DELETE', '/api/books/$id');
     return true;
   }
 
+  @override
   Future<Loan> lendBook(
     int bookId, {
     required String borrowerName,
@@ -315,6 +326,7 @@ class ApiClient {
     return Loan.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<void> returnBook(
     int bookId, {
     String? returnedAt,
@@ -326,6 +338,7 @@ class ApiClient {
   );
 
   // --- locations ---------------------------------------------------------- //
+  @override
   Future<List<Location>> listLocations() async {
     final response = await _get('/api/locations');
     return (response.data as List)
@@ -333,6 +346,7 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<Location> createLocation({
     required String name,
     int? parentId,
@@ -347,6 +361,7 @@ class ApiClient {
     return Location.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<Location> updateLocation(
     int id, {
     required String name,
@@ -362,12 +377,14 @@ class ApiClient {
     return Location.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<bool> deleteLocation(int id) async {
     await _send('POST', '/api/locations/$id/delete');
     return true;
   }
 
   // --- statuses ----------------------------------------------------------- //
+  @override
   Future<List<Status>> listStatuses() async {
     final response = await _get('/api/statuses');
     return (response.data as List)
@@ -375,6 +392,7 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<Status> createStatus({
     required String name,
     String color = '#64748b',
@@ -389,6 +407,7 @@ class ApiClient {
     return Status.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<Status> updateStatus(
     int id, {
     required String name,
@@ -404,12 +423,14 @@ class ApiClient {
     return Status.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<bool> deleteStatus(int id) async {
     await _send('POST', '/api/statuses/$id/delete');
     return true;
   }
 
   // --- reference data ----------------------------------------------------- //
+  @override
   Future<List<RefItem>> listAuthors() async {
     final response = await _get('/api/authors');
     return (response.data as List)
@@ -417,6 +438,7 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<List<RefItem>> listPublishers() async {
     final response = await _get('/api/publishers');
     return (response.data as List)
@@ -424,23 +446,27 @@ class ApiClient {
         .toList();
   }
 
+  @override
   Future<List<String>> listSagas() async {
     final response = await _get('/api/sagas');
     return (response.data as List).map((item) => '$item').toList();
   }
 
   // --- aggregates & lookup ------------------------------------------------ //
+  @override
   Future<DashboardData> dashboard() async {
     final response = await _get('/api/dashboard');
     return DashboardData.fromJson(response.data as Map<String, dynamic>);
   }
 
+  @override
   Future<Stats> stats() async {
     final response = await _get('/api/stats');
     return Stats.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Online metadata for one ISBN (Open Library / Google Books).
+  @override
   Future<SearchResult?> lookupIsbn(String isbn) async {
     try {
       final response = await _get('/api/lookup/isbn/${Uri.encodeComponent(isbn)}');
@@ -450,6 +476,7 @@ class ApiClient {
     }
   }
 
+  @override
   Future<List<SearchResult>> searchBooks(String query, {int limit = 12}) async {
     final response = await _get('/api/search', query: {'q': query, 'limit': limit});
     return (response.data as List)

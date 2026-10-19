@@ -87,7 +87,7 @@ class BookDetailScreen extends ConsumerWidget {
             final deleted = await runGuarded(
               context,
               ref,
-              () => ref.read(apiClientProvider).deleteBook(bookId),
+              () => ref.read(repoProvider).deleteBook(bookId),
             );
             if (deleted == null) return;
             invalidateBooks(ref);

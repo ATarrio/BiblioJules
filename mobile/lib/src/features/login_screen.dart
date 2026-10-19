@@ -3,13 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/l10n.dart';
 import '../core/providers.dart';
+import '../local/library_files.dart';
 import '../theme.dart';
+import '../widgets/feedback.dart';
 import '../widgets/l10n_scope.dart';
 
-/// Sign-in (and "which library do I talk to?") screen.
+/// Sign-in — or, just as valid, "keep the library on this phone".
 ///
-/// The app has no database of its own, so before anything else it needs the
-/// address of a BiblioJules server plus an account on it.
+/// Against a server the app needs its address plus an account on it. Local mode
+/// needs neither: it is one SQLite file the phone owns, so anyone can start
+/// using the app without hosting anything.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -54,6 +57,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
   }
 
+  /// Start (or reopen) a catalogue that lives on this device alone.
+  Future<void> _useLocalLibrary(L10n l10n) async {
+    FocusScope.of(context).unfocus();
+    final name = await promptForText(
+      context,
+      title: l10n.tr('Library on this phone'),
+      message: l10n.tr(
+        'Name your library. The name also becomes its file name when you export it.',
+      ),
+      initial: ref.read(prefsProvider).localLibraryName ?? kDefaultLibraryName,
+      label: l10n.tr('Library name'),
+      icon: Icons.local_library_outlined,
+      confirmLabel: l10n.tr('Use this library'),
+    );
+    if (name == null) return;
+    await ref.read(sessionProvider.notifier).useLocalLibrary(name);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.localized;
@@ -75,7 +96,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       context,
                       icon: Icons.info_outline,
                       color: kAmber,
-                      message: session.notice!,
+                      message: l10n.tr(session.notice!),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -84,7 +105,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       context,
                       icon: Icons.error_outline,
                       color: kRed,
-                      message: session.error!,
+                      message: l10n.tr(session.error!),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -138,6 +159,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Text(l10n.tr('Sign in')),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: session.busy ? null : () => _useLocalLibrary(l10n),
+                    icon: const Icon(Icons.phone_android, size: 18),
+                    label: Text(l10n.tr('Use a library on this phone')),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.tr(
+                      'Kept on the device only. No server and no account needed.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: kSlate500,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Center(child: _languagePicker(context, l10n, ref)),

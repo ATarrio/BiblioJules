@@ -103,7 +103,7 @@ class StatusesScreen extends ConsumerWidget {
                       final done = await runGuarded(
                         context,
                         ref,
-                        () => ref.read(apiClientProvider).deleteStatus(status.id),
+                        () => ref.read(repoProvider).deleteStatus(status.id),
                       );
                       if (done == null) return;
                       invalidateStatuses(ref);
@@ -217,7 +217,7 @@ class _StatusDialogState extends ConsumerState<_StatusDialog> {
       return;
     }
     setState(() => _busy = true);
-    final api = ref.read(apiClientProvider);
+    final api = ref.read(repoProvider);
     try {
       if (widget.status == null) {
         await api.createStatus(

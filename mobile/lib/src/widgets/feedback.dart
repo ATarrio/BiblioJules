@@ -39,6 +39,65 @@ void showSnack(BuildContext context, String message, {bool isError = false}) {
     );
 }
 
+/// Ask for one line of text — a library name, say.
+///
+/// Returns ``null`` when the user cancels, and the trimmed text (possibly
+/// empty) when they confirm, so the caller decides what an empty answer means.
+Future<String?> promptForText(
+  BuildContext context, {
+  required String title,
+  String? message,
+  String? initial,
+  String? label,
+  String? hint,
+  String? confirmLabel,
+  IconData? icon,
+}) async {
+  final l10n = context.localized;
+  final controller = TextEditingController(text: initial ?? '');
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (message != null) ...[
+              Text(message),
+              const SizedBox(height: 14),
+            ],
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: label,
+                hintText: hint,
+                prefixIcon: icon == null ? null : Icon(icon),
+              ),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: Text(confirmLabel ?? l10n.tr('Confirm')),
+          ),
+        ],
+      ),
+    );
+  } finally {
+    controller.dispose();
+  }
+}
+
 /// Ask before doing something that cannot be undone.
 Future<bool> confirmAction(
   BuildContext context, {

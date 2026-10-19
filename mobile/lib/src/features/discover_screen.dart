@@ -58,7 +58,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _lookupMessage = null;
       _isbn.text = isbn;
     });
-    final api = ref.read(apiClientProvider);
+    final api = ref.read(repoProvider);
     try {
       final existing = await api.findByIsbn(isbn);
       final result = await api.lookupIsbn(isbn);
@@ -96,7 +96,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       _resultsQuery = query;
     });
     try {
-      final results = await ref.read(apiClientProvider).searchBooks(query);
+      final results = await ref.read(repoProvider).searchBooks(query);
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -124,7 +124,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final isbn = result.isbn;
     if (isbn != null && isbn.isNotEmpty) {
       try {
-        final existing = await ref.read(apiClientProvider).findByIsbn(isbn);
+        final existing = await ref.read(repoProvider).findByIsbn(isbn);
         if (existing != null && mounted) {
           final open = await confirmAction(
             context,

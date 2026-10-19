@@ -38,6 +38,20 @@ List<(Location, int)> orderedLocations(List<Location> locations) {
   return out;
 }
 
+/// Turn a human name into a slug, mirroring the server's ``library.slugify``.
+///
+/// Used for both status URLs and local library file names, so the same name
+/// produces the same slug everywhere. [fallback] is returned when nothing
+/// usable survives (a name made entirely of punctuation, say).
+String slugify(String value, {String fallback = 'status'}) {
+  var text = value.toLowerCase();
+  // Drop anything that is not a word character, whitespace or a dash. Dart's
+  // ``\w`` is ASCII-only, which is what a slug wants.
+  text = text.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+  text = text.replaceAll(RegExp(r'[\s_-]+'), '-');
+  return text.isEmpty ? fallback : text;
+}
+
 /// Normalise a hex colour typed or picked by the user.
 String normalizeHexColor(String value, {String fallback = '#64748b'}) {
   var hex = value.trim().replaceFirst('#', '');

@@ -68,7 +68,8 @@ talk to the same account-protected catalog.
   panel to add or remove people. Everyone shares the same shelves, so the app
   can be hosted and reached from the web, desktop and phone.
 - **Three front-ends, one library.** Browser, a native desktop window with
-  local-database and remote modes, and a native Android app for the phone.
+  local-database and remote modes, and a native Android app that can keep its
+  own library on the phone or talk to a hosted one.
 
 ---
 
@@ -248,21 +249,48 @@ keep it out of version control (`data/` already is).
 ## Android app (optional)
 
 There is also a native **Android** app (Flutter) for the phone in your pocket.
-It is a thin client for a *hosted* library: it keeps **no database at all**, so
-it always needs the address of a running BiblioJules server and an account on
-it. Point it at the server, sign in once, and the token is kept in the Android
-keystore.
+It runs in either of two modes, picked on the sign-in screen and changed
+whenever you like in **Settings**:
+
+- **A library on this phone** — the whole collection lives in a single SQLite
+  file in the app's own storage. No account, no server, no network: dashboard,
+  search, filters, shelves, statuses and lending all work on a plane. Only
+  **Discover** and ISBN lookups need a connection, and they ask Open Library and
+  Google Books directly.
+- **A server** — a thin client for a hosted library: no database of its own,
+  every screen reads and writes through the JSON API, and a loan recorded here
+  shows up in the browser immediately.
+
+Switching modes keeps both: the file stays on the phone and the server token
+stays in the keystore, so going back and forth needs no re-signing-in.
 
 ```bash
 cd mobile
 flutter pub get
-flutter run --release      # or: flutter build apk
+flutter run --release      # or: flutter build apk --split-per-abi
 ```
 
-The app has the same features as the web and desktop front-ends — dashboard,
+Both modes have the same features as the web and desktop front-ends — dashboard,
 searchable/filterable catalog, ISBN scanning, locations, statuses, lending,
 loans history, online discovery — everything except user management, which
 stays admin-only on the web.
+
+### Moving a library between the phone and a server
+
+The local section of **Settings** can **export** the phone's library and
+**import** another one. Both go through Android's own file picker, so the
+destination can be Downloads, a USB stick, or a **Google Drive** folder, with no
+extra setup.
+
+- **Export** writes one self-contained `.sqlite` file. Drop it into a hosted
+  instance's `data/` directory and the server has the collection.
+- **Import** takes a file — a phone export, or a server's `data/library.db`,
+  accounts and all — and makes it this phone's library. Nothing is merged: the
+  current library is replaced.
+
+There is deliberately **no sync**. Export and import are the transfer path,
+because two copies of a library that quietly drift apart are worse than an
+explicit move.
 
 - **Emulator:** use `http://10.0.2.2:8000` as the backend URL to reach a server
   on the host machine.
@@ -272,8 +300,8 @@ stays admin-only on the web.
   builds alone, so you can develop against a local server without weakening the
   real app.
 
-Requires the **Flutter 3.47+ SDK** plus the Android SDK; no Python, no database.
-See [`mobile/README.md`](mobile/README.md) for details.
+Requires the **Flutter 3.47+ SDK** plus the Android SDK — no Python on the
+phone. See [`mobile/README.md`](mobile/README.md) for details.
 
 ---
 
@@ -334,9 +362,9 @@ See [`mobile/README.md`](mobile/README.md) for details.
 │       ├── dialogs.py     #   add/edit book, lend, location, status dialogs
 │       ├── db.py  workers.py  util.py
 │       └── ...
-├── mobile/                # Flutter Android app (a thin client, no local DB)
+├── mobile/                # Flutter Android app (its own library, or a server)
 │   ├── lib/
-│   │   ├── main.dart      #   load prefs + catalogues + token, then run
+│   │   ├── main.dart      #   open the library + load prefs/catalogues, then run
 │   │   └── src/
 │   │       ├── app.dart   #   router + sign-in guard
 │   │       ├── core/      #   api client, providers, models, l10n
@@ -350,6 +378,7 @@ See [`mobile/README.md`](mobile/README.md) for details.
 ├── migrations/            # Alembic migrations (schema evolution)
 ├── run.py                 # Web launcher
 ├── desktop.py             # Desktop launcher
+├── dump_schema.py         # Dumps the server schema for the Android app's check
 ├── requirements.txt
 ├── requirements-desktop.txt
 └── .env.example
@@ -427,6 +456,19 @@ alembic upgrade head
 
 Skipping the stamp is what produces `table authors already exists` on an
 existing library.
+
+> The Android app keeps its own copy of this schema
+> (`mobile/lib/src/local/schema.dart`) so it can run with no server at all.
+> After editing anything in `app/models/`, refresh the fixture it is checked
+> against:
+>
+> ```bash
+> python dump_schema.py
+> ```
+>
+> `mobile/test/schema_parity_test.dart` then fails if the phone's copy has
+> drifted — the two schemas have to stay interchangeable, since an exported
+> file moves between them.
 
 ---
 
@@ -511,5 +553,6 @@ app/locales/es-419.json   # Español (Latinoamérica)
 - The app is meant to be shared by a household. It now ships with accounts, so
   it is safe to host — but do read *Hosting it safely* above before exposing it
   to the internet (HTTPS, `COOKIE_SECURE`, and don't leave `/docs` open).
-- Everything is local: your data lives only in your database file (and the
-  online lookups only send the ISBN you scan).
+- Everything is local: your data lives only in your database file (on the phone,
+  in the library file in the app's private storage). The online lookups only
+  ever send the ISBN you scan or the words you search for.

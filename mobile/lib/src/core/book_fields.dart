@@ -49,3 +49,15 @@ String scoreStars(double? score) {
 /// (mirrors ``isbn_lookup.normalize_isbn`` on the server).
 String normalizeIsbn(String raw) =>
     raw.replaceAll(RegExp(r'[^0-9Xx]'), '').toUpperCase();
+
+/// The year inside a free-form date, or ``null`` when there is none.
+///
+/// Mirrors ``isbn_lookup.extract_year``: anything from 1500 to 2099 that looks
+/// like a year counts, so ``1965``, ``2019-04-23`` and ``April 2019`` all work,
+/// while a date written as ``MMV`` yields nothing.
+int? extractYear(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  final match = RegExp(r'(1[5-9]\d\d|20\d\d)').firstMatch('$value');
+  return match == null ? null : int.parse(match.group(1)!);
+}
