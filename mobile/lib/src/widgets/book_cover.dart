@@ -25,15 +25,17 @@ class BookCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radiusValue = BorderRadius.circular(radius);
+    // The placeholder follows the theme like every other surface.
+    final background = Theme.of(context).colorScheme.surfaceContainerHigh;
     final cover = (url == null || url!.isEmpty)
-        ? _placeholder()
+        ? _placeholder(background)
         : CachedNetworkImage(
             imageUrl: url!,
             width: width,
             height: height,
             fit: BoxFit.cover,
-            placeholder: (context, url) => _placeholder(loading: true),
-            errorWidget: (context, url, error) => _placeholder(),
+            placeholder: (context, url) => _placeholder(background, loading: true),
+            errorWidget: (context, url, error) => _placeholder(background),
           );
     return ClipRRect(
       borderRadius: radiusValue,
@@ -41,14 +43,14 @@ class BookCover extends StatelessWidget {
     );
   }
 
-  Widget _placeholder({bool loading = false}) {
+  Widget _placeholder(Color background, {bool loading = false}) {
     final initial = (title == null || title!.trim().isEmpty)
         ? '?'
         : title!.trim().characters.first.toUpperCase();
     return Container(
       width: width,
       height: height,
-      color: kSlate800,
+      color: background,
       alignment: Alignment.center,
       child: loading
           ? const SizedBox(

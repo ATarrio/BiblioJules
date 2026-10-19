@@ -216,3 +216,13 @@ def discover_page(request: Request, db: Session = Depends(get_db)):
             "wishlist": library.get_status_by_slug(db, "wishlist"),
         },
     )
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    """The browser's configuration: accent colour, language and light/dark.
+
+    All three are per browser (a cookie, a cookie, and ``localStorage``), so the
+    page renders no data of its own — the templates read the current values.
+    """
+    return templates.TemplateResponse(request, "settings.html", {})

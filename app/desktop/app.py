@@ -27,7 +27,7 @@ def run(argv: list[str] | None = None) -> int:
     # Apply the saved UI language before any widget text is built.
     i18n.set_language(preferences.get_preferred_language())
 
-    apply_theme(app)
+    apply_theme(app, preferences.get_color_theme())
 
     if preferences.get_mode() == preferences.MODE_REMOTE:
         # Remote mode touches no local database at all.

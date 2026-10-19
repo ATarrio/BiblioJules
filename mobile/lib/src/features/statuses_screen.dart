@@ -72,7 +72,7 @@ class StatusesScreen extends ConsumerWidget {
                       Flexible(child: Text(status.name)),
                       if (status.isDefault) ...[
                         const SizedBox(width: 8),
-                        _Tag(label: l10n.tr('Default'), color: kBrand),
+                        _Tag(label: l10n.tr('Default'), color: Theme.of(context).colorScheme.primary),
                       ],
                       if (status.isSystem) ...[
                         const SizedBox(width: 6),

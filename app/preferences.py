@@ -2,9 +2,9 @@
 
 Lives next to the SQLite database in the project ``data/`` directory so a single
 file follows the user regardless of their working directory. It holds the UI
-language, the chosen data source (local database or a hosted server) and, for
-remote mode, the access token — so the file is written with ``0600``
-permissions and must never be committed.
+language, the accent colour, the chosen data source (local database or a hosted
+server) and, for remote mode, the access token — so the file is written with
+``0600`` permissions and must never be committed.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 
+from . import themes
 from .config import DATA_DIR
 from .i18n import DEFAULT_LANGUAGE, normalize_language
 
@@ -56,6 +57,22 @@ def set_preferred_language(code: str) -> str:
     preferences["language"] = language
     save_preferences(preferences)
     return language
+
+
+# --------------------------------------------------------------------------- #
+# Appearance (the accent colour the whole UI is drawn in)
+# --------------------------------------------------------------------------- #
+def get_color_theme() -> str:
+    """The saved accent, falling back to the default theme."""
+    return themes.normalize_theme(load_preferences().get("color_theme"))
+
+
+def set_color_theme(slug: str) -> str:
+    preferences = load_preferences()
+    color_theme = themes.normalize_theme(slug)
+    preferences["color_theme"] = color_theme
+    save_preferences(preferences)
+    return color_theme
 
 
 # --------------------------------------------------------------------------- #

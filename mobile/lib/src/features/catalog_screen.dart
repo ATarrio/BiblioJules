@@ -256,7 +256,7 @@ class _SortButton extends ConsumerWidget {
                 Icon(
                   option.$1 == query.sort ? Icons.check : Icons.sort,
                   size: 18,
-                  color: option.$1 == query.sort ? kBrand : kSlate500,
+                  color: option.$1 == query.sort ? Theme.of(context).colorScheme.primary : kSlate500,
                 ),
                 const SizedBox(width: 10),
                 Expanded(child: Text(l10n.tr(option.$2))),

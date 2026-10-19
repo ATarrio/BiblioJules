@@ -151,6 +151,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final l10n = context.localized;
     final session = ref.watch(sessionProvider);
     final language = ref.watch(languageProvider);
+    final colorTheme = ref.watch(colorThemeProvider);
     return Scaffold(
       appBar: LibraryAppBar(title: l10n.tr('Settings'), showSync: false),
       body: ListView(
@@ -205,7 +206,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ? l10n.tr('Administrator')
                             : l10n.tr('Member'),
                         style: TextStyle(
-                          color: session.user!.isAdmin ? kBrand : kSlate400,
+                          color: session.user!.isAdmin
+                              ? Theme.of(context).colorScheme.primary
+                              : kSlate400,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -243,13 +246,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ListTile(
                     leading: Icon(
                       option.code == language ? Icons.check_circle : Icons.translate,
-                      color: option.code == language ? kBrand : kSlate500,
+                      color: option.code == language
+                          ? Theme.of(context).colorScheme.primary
+                          : kSlate500,
                     ),
                     title: Text(option.label),
                     subtitle: option.code == kDefaultLanguage
                         ? null
                         : Text(option.code),
                     onTap: () => ref.read(languageProvider.notifier).set(option.code),
+                  ),
+              ],
+            ),
+          ),
+
+          _Section(title: l10n.tr('Theme')),
+          Card(
+            child: Column(
+              children: [
+                for (final option in kThemes)
+                  ListTile(
+                    leading: _ThemeDot(theme: option, selected: option.slug == colorTheme),
+                    title: Text(l10n.tr(option.label)),
+                    onTap: () => ref.read(colorThemeProvider.notifier).set(option.slug),
                   ),
               ],
             ),
@@ -460,6 +479,25 @@ class _Section extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+  }
+}
+
+/// One theme's colour, ticked when it is the one in use. The tick is drawn in
+/// the theme's own ink, so a yellow row shows the dark-on-gold it will get.
+class _ThemeDot extends StatelessWidget {
+  const _ThemeDot({required this.theme, required this.selected});
+
+  final ColorTheme theme;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(color: theme.accent, shape: BoxShape.circle),
+      child: selected ? Icon(Icons.check, size: 18, color: theme.ink) : null,
     );
   }
 }

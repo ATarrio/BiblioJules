@@ -139,7 +139,9 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
                                     ? Icons.check_circle
                                     : Icons.circle_outlined,
                                 size: 20,
-                                color: isSelected ? kBrand : kSlate500,
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : kSlate500,
                               )
                             : Icon(Icons.circle, size: 16, color: option.color),
                         title: Text(option.label),

@@ -1,4 +1,4 @@
-"""Connection settings: the local database, or a hosted BiblioJules server."""
+"""Settings: where the catalogue lives, the account behind it, and the theme."""
 
 from __future__ import annotations
 
@@ -17,13 +17,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import preferences
+from .. import preferences, themes
 from ..i18n import _
 from .repo import RepoError, login as repo_login
 
 
 class SettingsDialog(QDialog):
-    """Pick where the catalogue lives, and sign in when it is a remote server.
+    """Pick where the catalogue lives, sign in when it is a remote server, and
+    choose the accent colour.
 
     The dialog performs the sign-in itself (it is the only place that holds a
     not-yet-saved backend URL). The caller reads :meth:`result_data` and applies
@@ -84,6 +85,19 @@ class SettingsDialog(QDialog):
         buttons_row.addWidget(self.sign_in_btn)
         account_form.addRow("", self._wrap(buttons_row))
 
+        # The accent the whole UI is drawn in. Applied on Save like everything
+        # else, so cancelling really does change nothing.
+        appearance = QGroupBox(_("Appearance"))
+        appearance_form = QFormLayout(appearance)
+
+        self.color_theme = QComboBox()
+        for option in themes.THEMES:
+            self.color_theme.addItem(_(option.label), option.slug)
+        index = self.color_theme.findData(preferences.get_color_theme())
+        if index >= 0:
+            self.color_theme.setCurrentIndex(index)
+        appearance_form.addRow(_("Theme"), self.color_theme)
+
         self.message = QLabel("")
         self.message.setObjectName("Hint")
         self.message.setWordWrap(True)
@@ -99,6 +113,7 @@ class SettingsDialog(QDialog):
         layout.setSpacing(12)
         layout.addWidget(source)
         layout.addWidget(account)
+        layout.addWidget(appearance)
         layout.addWidget(self.message)
         layout.addWidget(buttons)
         buttons.accepted.connect(self.accept)
@@ -174,4 +189,5 @@ class SettingsDialog(QDialog):
             "backend_url": self.url.text().strip(),
             "token": self._token,
             "account": self._account,
+            "color_theme": self.color_theme.currentData() or themes.DEFAULT_THEME,
         }

@@ -57,7 +57,8 @@ its own and work with **no server at all**.
 - **Peek at a book.** Click a book tile (or double-click a row in the desktop
   app) for a pop-up with its full details — cover included — plus a one-click
   shortcut to edit them.
-- **Sleek & responsive** UI with dark mode, works on phone, tablet and desktop.
+- **Sleek & responsive** UI with dark mode and eight colour themes that repaint
+  the accents and the surfaces alike, on phone, tablet and desktop.
 - **Offline on the phone.** The Android app can hold the entire catalogue in a
   file on the device — no account, no server, no network — and still give you the
   dashboard, search, filters, shelves, statuses and lending. Only the online
@@ -335,7 +336,9 @@ phone. See [`mobile/README.md`](mobile/README.md) for details.
 │   ├── database.py        # Engine, session, Declarative Base
 │   ├── templating.py      # Jinja2 environment + filters
 │   ├── i18n.py            # Translation core (gettext-style) + language middleware
-│   ├── preferences.py     # Small JSON prefs store (UI language, data source, token)
+│   ├── themes.json        # The eight themes: accents + surface ramps (shared)
+│   ├── themes.py          # Loads them: defaults, validation, cookie name
+│   ├── preferences.py     # Small JSON prefs store (UI language, accent, data source, token)
 │   ├── locales/           # Translation catalogs, e.g. es-419.json (English = source)
 │   ├── schemas.py         # Pydantic request models for the JSON API
 │   ├── models/            # SQLAlchemy models (one file per concept)
@@ -384,6 +387,7 @@ phone. See [`mobile/README.md`](mobile/README.md) for details.
 ├── run.py                 # Web launcher
 ├── desktop.py             # Desktop launcher
 ├── dump_schema.py         # Dumps the server schema for the Android app's check
+├── generate_theme_surfaces.py  # Recomputes each theme's surface ramp from its accent
 ├── requirements.txt
 ├── requirements-desktop.txt
 └── .env.example
@@ -515,9 +519,13 @@ removes a book from its shelf without overwriting the rest of the record.
 
 ## Customisation
 
-- **Theme:** Tailwind is loaded from its Play CDN with a small config in
-  `app/templates/base.html` (brand colour, dark mode). Vendored/compiled
-  Tailwind can be dropped in `app/static/css/` and the CDN script removed.
+- **Theme:** `app/themes.json` holds eight palettes (red, orange, yellow,
+  green, blue, purple, pink, gray), each with a ten-shade accent *and* an
+  eleven-step surface ramp. The web app turns them into Tailwind's `brand` scale
+  and a set of `--surface-*` variables at render time (see `_palette.html`).
+  Tailwind itself is loaded from its Play CDN with a small config there (dark
+  mode). Vendored/compiled Tailwind can be dropped in `app/static/css/` and the
+  CDN script removed.
 - **ISBN sources:** providers live in `app/services/isbn_lookup.py`. The merger
   already fills missing fields from a second source — add a third by writing one
   async function and adding it to the provider list.
@@ -550,6 +558,48 @@ app/locales/es-419.json   # Español (Latinoamérica)
 - Plural forms use an object value: `"book": { "one": "libro", "other": "libros" }`.
 - The built-in status names (In library, Reading, …) are translated by *slug*;
   if you rename one, your name is shown as-is.
+
+---
+
+## Themes
+
+Every client offers the same eight colours: red, orange, yellow, green, blue
+(the default), purple, pink and gray. A theme is more than an accent — the
+surfaces move with it, so a green library has deep green-black panels in dark
+mode and a faintly mint page in light mode, while a pink one is wine-dark or
+rose-tinted.
+
+The palettes live once in `app/themes.json`. Each theme has:
+
+- an **accent**, a Tailwind-style `50`…`900` scale, plus an `ink` for text drawn
+  *on* the accent (white everywhere except yellow, where it is dark enough to
+  read);
+- a **surface ramp**: Tailwind slate's eleven steps with the accent's hue. Every
+  step keeps slate's *lightness*, so body text, muted text and borders keep
+  exactly the contrast they were designed with — the ramp only changes the
+  colour cast. A `card` entry is the light-mode panel colour (near-white, tinted).
+
+The web turns the ramp into CSS variables (`bg-slate-900` becomes a themed
+panel), the desktop app builds its stylesheet and Qt palette from it, and Android
+paints `scaffoldBackgroundColor`, cards, inputs, menus and borders with it.
+
+The web and desktop apps read that file directly. Android cannot read the
+server's files, so it keeps a mirror in `mobile/lib/src/theme.dart`;
+`mobile/test/theme_sync_test.dart` fails if the mirror and the JSON ever
+disagree.
+
+The choice is per device, like the language:
+
+- **Web:** the Settings page (`/settings`) stores the slug in a `color_theme`
+  cookie.
+- **Desktop:** File → Settings → Appearance saves it in `data/preferences.json`
+  and re-colours the window as soon as you save.
+- **Android:** Settings → Theme stores it in the app's preferences.
+
+To add a colour, add the slug, label, ink and accent scale to
+`app/themes.json`, run `python generate_theme_surfaces.py` to derive its surface
+ramp, then mirror the theme in `theme.dart`. The pickers, the Tailwind scale,
+the CSS variables and the desktop stylesheet all pick it up.
 
 ---
 

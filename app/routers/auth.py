@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from .. import i18n
+from .. import i18n, themes
 from ..config import settings
 from ..database import get_db
 from ..i18n import _
@@ -43,6 +43,8 @@ router = APIRouter()
 
 # How long a language choice sticks (a year).
 _LANGUAGE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+# …and how long the accent colour does (same again).
+_THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 
 
 def _session_max_age() -> int:
@@ -83,6 +85,24 @@ def switch_language(request: Request):
     response = RedirectResponse(target, status_code=303)
     response.set_cookie(
         "lang", code, max_age=_LANGUAGE_COOKIE_MAX_AGE, samesite="lax", path="/"
+    )
+    return response
+
+
+# --------------------------------------------------------------------------- #
+# Browser: colour theme switcher
+# --------------------------------------------------------------------------- #
+@router.get("/theme")
+def switch_theme(request: Request):
+    """Remember the chosen accent colour in a cookie and go back."""
+    slug = themes.normalize_theme(request.query_params.get("theme"))
+    target = _safe_next(
+        request.query_params.get("next") or request.headers.get("referer"),
+        default="/settings",
+    )
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(
+        themes.THEME_COOKIE, slug, max_age=_THEME_COOKIE_MAX_AGE, samesite="lax", path="/"
     )
     return response
 

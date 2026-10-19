@@ -509,5 +509,19 @@
   "The server's certificate could not be verified.": "No se pudo verificar el certificado del servidor.",
   "You are not allowed to do that.": "No tienes permiso para hacer eso.",
   "Your session has expired.": "Tu sesión expiró.",
-  "Your session has expired. Please sign in again.": "Tu sesión expiró. Inicia sesión de nuevo."
+  "Your session has expired. Please sign in again.": "Tu sesión expiró. Inicia sesión de nuevo.",
+  "Appearance": "Apariencia",
+  "Applies to this browser only.": "Se aplica solo a este navegador.",
+  "Blue": "Azul",
+  "Gray": "Gris",
+  "Green": "Verde",
+  "How this browser looks. Nothing here changes the library itself.": "Cómo se ve este navegador. Nada de esto cambia la biblioteca en sí.",
+  "Light and dark": "Claro y oscuro",
+  "Orange": "Naranja",
+  "Pink": "Rosa",
+  "Purple": "Morado",
+  "Red": "Rojo",
+  "The colour of the buttons, links and backgrounds.": "El color de los botones, los enlaces y los fondos.",
+  "Theme": "Tema",
+  "Yellow": "Amarillo"
 }

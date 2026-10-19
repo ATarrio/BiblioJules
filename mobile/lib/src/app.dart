@@ -160,13 +160,14 @@ class BiblioJulesApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
+    final palette = ref.watch(paletteProvider);
     final router = ref.watch(routerProvider);
     return L10nScope(
       l10n: l10n,
       child: MaterialApp.router(
         title: kAppName,
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(),
+        theme: buildTheme(palette),
         routerConfig: router,
         locale: localeFor(l10n.language),
         supportedLocales: kSupportedLocales,

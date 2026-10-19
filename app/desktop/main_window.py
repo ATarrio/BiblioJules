@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -28,7 +29,7 @@ from .locations_view import LocationsView
 from .repo import AuthError, LocalRepo, RemoteRepo, RepoError, current_repo, set_repo
 from .settings_dialog import SettingsDialog
 from .statuses_view import StatusesView
-from .theme import LOGO_SVG
+from .theme import LOGO_SVG, apply_theme
 
 # (emoji, English source label) — order mirrors the web app's sidebar.
 # Labels are translated when the UI is built, so a language switch can rebuild it.
@@ -183,6 +184,14 @@ class MainWindow(QMainWindow):
             token=data.get("token") or "",
             account=data.get("account") or "",
         )
+        # Recolour before rebuilding: the new widgets are built (and the old ones
+        # torn down) under the theme that was just chosen.
+        color_theme = preferences.set_color_theme(
+            data.get("color_theme") or preferences.get_color_theme()
+        )
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, color_theme)
         self._install_repo()
         self._rebuild()
         if preferences.get_mode() == preferences.MODE_REMOTE and not preferences.get_api_token():

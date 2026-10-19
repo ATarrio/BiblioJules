@@ -12,7 +12,7 @@ from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QCheckBox, QWidget
 
-from .theme import BRAND_500, BRAND_600, SLATE_300, SLATE_700, SLATE_800, WHITE
+from .theme import accent, surface
 
 TRACK_WIDTH = 40
 TRACK_HEIGHT = 22
@@ -44,18 +44,18 @@ class Switch(QCheckBox):
         radius = TRACK_HEIGHT / 2
 
         if not self.isEnabled():
-            track_color = QColor(SLATE_800)
+            track_color = QColor(surface(800))
         elif self.isChecked():
-            track_color = QColor(BRAND_600)
+            track_color = QColor(accent(600))
         else:
-            track_color = QColor(SLATE_700)
+            track_color = QColor(surface(700))
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(track_color)
         painter.drawRoundedRect(track, radius, radius)
 
         if self.hasFocus():
-            pen = QPen(QColor(BRAND_500))
+            pen = QPen(QColor(accent(500)))
             pen.setWidth(2)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -67,11 +67,11 @@ class Switch(QCheckBox):
         )
         knob = QRectF(knob_x, top + KNOB_MARGIN, knob_diameter, knob_diameter)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(WHITE))
+        painter.setBrush(QColor(surface(50)))
         painter.drawEllipse(knob)
 
         if self.text():
-            painter.setPen(QColor(SLATE_300))
+            painter.setPen(QColor(surface(300)))
             text_rect = QRectF(
                 TRACK_WIDTH + LABEL_GAP, 0.0, self.width() - TRACK_WIDTH - LABEL_GAP, self.height()
             )

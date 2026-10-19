@@ -140,7 +140,8 @@ class _StatGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.localized;
     final items = <(String, String, IconData, Color)>[
-      (l10n.tr('Books'), '${stats.total}', Icons.menu_book_outlined, kBrand),
+      (l10n.tr('Books'), '${stats.total}', Icons.menu_book_outlined,
+          Theme.of(context).colorScheme.primary),
       (l10n.tr('Authors'), '${stats.authors}', Icons.person_outline, kViolet),
       (l10n.tr('Publishers'), '${stats.publishers}', Icons.business_outlined, kSlate400),
       (l10n.tr('On loan'), '${stats.loans}', Icons.assignment_return_outlined, kEmerald),
@@ -156,9 +157,9 @@ class _StatGrid extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: kSlate900,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: kSlate800),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               child: Row(
                 children: [
@@ -219,7 +220,8 @@ class _StatusCountRow extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: fraction,
                     minHeight: 5,
-                    backgroundColor: kSlate800,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHigh,
                     valueColor: AlwaysStoppedAnimation(color),
                   ),
                 ),

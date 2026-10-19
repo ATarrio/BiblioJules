@@ -117,7 +117,10 @@ class _ScanScreenState extends State<ScanScreen> {
                         width: constraints.maxWidth * 0.78,
                         height: constraints.maxHeight * 0.36,
                         decoration: BoxDecoration(
-                          border: Border.all(color: kBrand, width: 2),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
@@ -132,7 +135,9 @@ class _ScanScreenState extends State<ScanScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: kSlate950.withValues(alpha: 0.75),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest.withValues(alpha: 0.75),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(l10n.tr('Point the camera at the barcode on the back cover')),

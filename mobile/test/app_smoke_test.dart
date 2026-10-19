@@ -15,6 +15,7 @@ import 'package:bibliojules_mobile/src/core/l10n.dart';
 import 'package:bibliojules_mobile/src/core/models/models.dart';
 import 'package:bibliojules_mobile/src/core/prefs.dart';
 import 'package:bibliojules_mobile/src/core/providers.dart';
+import 'package:bibliojules_mobile/src/theme.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -234,5 +235,53 @@ void main() {
     expect(find.text('Ubicaciones'), findsOneWidget);
     expect(find.text('Catálogo'), findsWidgets);
     expect(find.text('Sign in to your library'), findsNothing);
+  });
+
+  testWidgets('the settings screen re-themes the whole app', (tester) async {
+    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+    await _pumpApp(tester, container);
+
+    ThemeData appTheme() =>
+        tester.widget<MaterialApp>(find.byType(MaterialApp)).theme!;
+
+    // A fresh install is blue.
+    expect(container.read(colorThemeProvider), 'blue');
+    expect(appTheme().colorScheme.primary, themeBySlug('blue').accent);
+
+    // Open the configuration screen — the overflow menu pushes this same route.
+    container.read(routerProvider).push('/settings');
+    await tester.pumpAndSettle();
+
+    // The theme picker sits near the bottom of the settings list.
+    final themeHeader = find.text('THEME');
+    await tester.dragUntilVisible(themeHeader, find.byType(ListView), const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(themeHeader, findsOneWidget);
+
+    final pink = find.text('Pink');
+    await tester.dragUntilVisible(pink, find.byType(ListView), const Offset(0, -150));
+    await tester.pumpAndSettle();
+    await tester.tap(pink);
+    await tester.pumpAndSettle();
+
+    // The provider, the MaterialApp and the saved preference all follow.
+    expect(container.read(colorThemeProvider), 'pink');
+    expect(container.read(paletteProvider).slug, 'pink');
+    expect(appTheme().colorScheme.primary, themeBySlug('pink').accent);
+    expect(appTheme().colorScheme.onPrimary, themeBySlug('pink').ink);
+    expect(container.read(prefsProvider).colorTheme, 'pink');
+  });
+
+  testWidgets('a yellow theme draws dark text on its buttons', (tester) async {
+    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+    await _pumpApp(tester, container);
+
+    await container.read(colorThemeProvider.notifier).set('yellow');
+    await tester.pumpAndSettle();
+
+    final theme = tester.widget<MaterialApp>(find.byType(MaterialApp)).theme!;
+    expect(theme.colorScheme.primary, themeBySlug('yellow').accent);
+    expect(theme.colorScheme.onPrimary, themeBySlug('yellow').ink);
+    expect(theme.filledButtonTheme.style!.foregroundColor!.resolve({}), themeBySlug('yellow').ink);
   });
 }

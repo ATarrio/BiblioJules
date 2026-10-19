@@ -63,8 +63,9 @@ guardar una biblioteca propia y funcionar **sin ningún servidor**.
 - **Mira un libro de cerca.** Haz clic en la tarjeta de un libro (o doble clic
   en una fila de la app de escritorio) para abrir una ventana con todos sus
   detalles —incluida la portada— y un acceso directo para editarlos.
-- **Interfaz moderna y responsiva** con modo oscuro; funciona en teléfono,
-  tablet y computadora.
+- **Interfaz moderna y responsiva** con modo oscuro y ocho temas de color que
+  repintan tanto los acentos como las superficies; funciona en teléfono, tablet
+  y computadora.
 - **Sin conexión en el teléfono.** La app de Android puede guardar todo el
   catálogo en un archivo del dispositivo —sin cuenta, sin servidor y sin red— y
   igual te da el panel, la búsqueda, los filtros, los estantes, los estados y los
@@ -361,7 +362,9 @@ el teléfono. Consulta [`mobile/README.md`](mobile/README.md) para más detalles
 │   ├── database.py        # Motor, sesión, Base declarativa
 │   ├── templating.py      # Entorno Jinja2 + filtros
 │   ├── i18n.py            # Núcleo de traducción (estilo gettext) + middleware de idioma
-│   ├── preferences.py     # Pequeño almacén JSON (idioma, origen de datos, token)
+│   ├── themes.json        # Los ocho temas: acentos + rampas de superficies (compartidos)
+│   ├── themes.py          # Las carga: valores por defecto, validación, cookie
+│   ├── preferences.py     # Pequeño almacén JSON (idioma, acento, origen de datos, token)
 │   ├── locales/           # Catálogos de traducción, p. ej. es-419.json (el inglés es la fuente)
 │   ├── schemas.py         # Modelos de request de Pydantic para la API JSON
 │   ├── models/            # Modelos SQLAlchemy (un archivo por concepto)
@@ -410,6 +413,7 @@ el teléfono. Consulta [`mobile/README.md`](mobile/README.md) para más detalles
 ├── run.py                 # Lanzador web
 ├── desktop.py             # Lanzador de escritorio
 ├── dump_schema.py         # Vuelca el esquema del servidor para la verificación de la app de Android
+├── generate_theme_surfaces.py  # Recalcula la rampa de superficies de cada tema desde su acento
 ├── requirements.txt
 ├── requirements-desktop.txt
 └── .env.example
@@ -546,9 +550,13 @@ formularios quita un libro de su estante sin sobrescribir el resto del registro.
 
 ## Personalización
 
-- **Tema:** Tailwind se carga desde su Play CDN con una pequeña configuración en
-  `app/templates/base.html` (color de marca, modo oscuro). Se puede colocar un
-  Tailwind compilado/propio en `app/static/css/` y quitar el script del CDN.
+- **Tema:** `app/themes.json` guarda ocho paletas (rojo, naranja, amarillo,
+  verde, azul, violeta, rosa, gris), cada una con un acento de diez tonos *y* una
+  rama de superficies de once pasos. La app web las convierte en la escala
+  `brand` de Tailwind y en variables `--surface-*` al renderizar (ver
+  `_palette.html`). Tailwind se carga desde su Play CDN con una pequeña
+  configuración ahí (modo oscuro). Se puede colocar un Tailwind compilado/propio
+  en `app/static/css/` y quitar el script del CDN.
 - **Fuentes de ISBN:** los proveedores viven en `app/services/isbn_lookup.py`. El
   combinador ya completa campos faltantes desde una segunda fuente; agrega una
   tercera escribiendo una función asíncrona y añadiéndola a la lista de
@@ -581,6 +589,51 @@ app/locales/es-419.json   # Español (Latinoamérica)
 - Las formas plurales usan un valor de objeto: `"book": { "one": "libro", "other": "libros" }`.
 - Los nombres de estado integrados (En la biblioteca, Leyendo, …) se traducen por
   *slug*; si renombras uno, se muestra tu nombre tal cual.
+
+---
+
+## Temas
+
+Todos los clientes ofrecen los mismos ocho colores: rojo, naranja, amarillo,
+verde, azul (el predeterminado), violeta, rosa y gris. Un tema es más que un
+acento: las superficies también lo siguen, así que una biblioteca verde tiene
+paneles verde muy oscuro en modo oscuro y una página apenas menta en modo claro,
+mientras que una rosa es color vino o rosada.
+
+Las paletas viven una sola vez en `app/themes.json`. Cada tema tiene:
+
+- un **acento**, una escala `50`…`900` estilo Tailwind, más un `ink` para el
+  texto dibujado *sobre* el acento (blanco en todos menos el amarillo, donde es
+  oscuro para que se lea);
+- una **rama de superficies**: los once pasos del gris pizarra de Tailwind con el
+  matiz del acento. Cada paso conserva la *luminosidad* del pizarra, así que el
+  texto normal, el atenuado y los bordes mantienen exactamente el contraste con
+  el que se diseñaron: solo cambia el tono. La entrada `card` es el color del
+  panel en modo claro (casi blanco, con un matiz).
+
+La web convierte la rama en variables CSS (`bg-slate-900` pasa a ser un panel
+con tema), la app de escritorio arma con ella su hoja de estilos y la paleta de
+Qt, y Android pinta con ella el fondo, las tarjetas, los campos, los menús y los
+bordes.
+
+Las apps web y de escritorio leen ese archivo directamente. Android no puede leer
+los archivos del servidor, así que guarda un espejo en
+`mobile/lib/src/theme.dart`; `mobile/test/theme_sync_test.dart` falla si el
+espejo y el JSON llegan a diferir.
+
+La elección es por dispositivo, como el idioma:
+
+- **Web:** la página Configuración (`/settings`) guarda el slug en una cookie
+  `color_theme`.
+- **Escritorio:** Archivo → Configuración → Apariencia lo guarda en
+  `data/preferences.json` y recolorea la ventana apenas guardas.
+- **Android:** Configuración → Tema lo guarda en las preferencias de la app.
+
+Para agregar un color, añade el slug, la etiqueta, el `ink` y la escala de acento
+a `app/themes.json`, ejecuta `python generate_theme_surfaces.py` para derivar su
+rampa de superficies y luego refleja el tema en `theme.dart`. Los selectores, la
+escala de Tailwind, las variables CSS y la hoja de estilos de escritorio lo toman
+solos.
 
 ---
 

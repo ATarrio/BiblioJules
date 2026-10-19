@@ -38,7 +38,8 @@ stays in the keystore, so going back and forth needs no re-signing-in.
 - **Locations** and **Statuses** — the same nested shelf tree and custom labels
   as the web app.
 - **Books** — add/edit/delete, lend and return, with loan history.
-- **Settings** — which library to use, rename, export, import, language, sign out.
+- **Settings** — which library to use, rename, export, import, theme, language,
+  sign out.
 
 Everything except user management (which stays admin-only, on the web) works
 here, exactly as in the browser.
@@ -248,6 +249,25 @@ the phone's copy of the catalogue instead.
 
 ---
 
+## Themes
+
+The eight themes — red, orange, yellow, green, blue (the default), purple, pink
+and gray — live in `app/themes.json`, which the web and desktop apps read
+directly. The APK cannot read the server's files, so `lib/src/theme.dart` keeps
+a mirror of the same palettes: a ten-shade accent, the `ink` drawn on top of it,
+and an eleven-step surface ramp whose hue follows the accent. The ramp keeps
+slate's lightness at every step, so text and borders keep their contrast.
+`test/theme_sync_test.dart` compares the two copies and fails if they drift;
+run `python generate_theme_surfaces.py` after changing an accent in the JSON, then
+copy the new values into the Dart table.
+
+The picker is Settings → Theme and the choice is stored with the other
+preferences (`color_theme`). It repaints the accent *and* the surfaces —
+scaffold, cards, inputs, menus, borders — and yellow uses dark ink on its
+buttons.
+
+---
+
 ## Tests
 
 ```bash
@@ -260,6 +280,7 @@ The suite has several layers:
 
 - `catalog_coverage_test.dart` — every label has a translation.
 - `locale_sync_test.dart` — the bundled catalogue matches the server's.
+- `theme_sync_test.dart` — the palette table matches `app/themes.json`.
 - `unit tests` — the api client (against a fake adapter), the models, the
   helpers and the translation lookup.
 - `local_repo_test.dart` — the local store, against real SQLite (via
@@ -275,7 +296,7 @@ The suite has several layers:
   the button through to the channel.
 - `schema_parity_test.dart` — the schema, against the server's.
 - `app_smoke_test.dart` — renders the real widget tree against a fake server:
-  sign-in screen, catalog, dashboard, book detail, language switch.
+  sign-in screen, catalog, dashboard, book detail, language and theme switches.
 - `api_integration_test.dart` — boots the **real** FastAPI server (from the
   repository this package sits in) on a throwaway SQLite database and drives it
   through the app's own `ApiClient`: sign in, add a book, lend and return it,
@@ -292,7 +313,7 @@ mobile/
 │   ├── main.dart              # load prefs + catalogues, open the local library, then run
 │   └── src/
 │       ├── app.dart           # MaterialApp.router, routes, sign-in guard
-│       ├── theme.dart         # the same slate/brand palette as the desktop app
+│       ├── theme.dart         # the eight themes: accents + surface ramps (mirrors app/themes.json)
 │       ├── core/
 │       │   ├── api_client.dart    # every endpoint, in one place
 │       │   ├── library_repo.dart  # the interface both modes implement

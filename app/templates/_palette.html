@@ -1,0 +1,41 @@
+{#- The colours every page paints with, from app/themes.json.
+
+    Two halves, both rendered server-side from the browser's cookie so there is
+    never a flash of the previous theme:
+
+    * ``brand`` — the accent, as real colours;
+    * ``slate`` — the surfaces, as CSS variables. The ramp is slate's lighting
+      rotated onto the theme's hue, so a single ``bg-slate-900`` class is a deep
+      tinted panel in dark mode and a pale one in light mode, and contrast stays
+      exactly where it was.
+
+    ``card`` is the light-mode panel colour (near-white, faintly tinted); in
+    dark mode the panels use the ``900`` step, like they always have.
+
+    Included by base.html and by the standalone sign-in page, which renders its
+    own <head>. -#}
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+        colors: {
+          // Every `brand-*` class: buttons, links, focus rings, the active
+          // navigation item.
+          brand: {{ brand_scale | tojson }},
+          // Every `slate-*` class, backed by the variables below.
+          slate: {{ surface_scale | tojson }},
+          card: 'rgb(var(--surface-card) / <alpha-value>)',
+        },
+      },
+    },
+  };
+</script>
+<style>
+  :root {
+    {% for step, rgb in surface_vars.scale.items() %}--surface-{{ step }}: {{ rgb }};
+    {% endfor %}--surface-card: {{ surface_vars.card }};
+  }
+  .dark { --surface-card: {{ surface_vars.card_dark }}; }
+</style>

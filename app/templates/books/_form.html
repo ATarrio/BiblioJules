@@ -45,17 +45,17 @@
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Title') }} *</label>
           <input name="title" required value="{{ form.get('title') or '' }}"
-                 class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                 class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Subtitle') }}</label>
           <input name="subtitle" value="{{ form.get('subtitle') or '' }}"
-                 class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                 class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Authors') }} <span class="font-normal">({{ _('comma separated') }})</span></label>
           <input name="authors" value="{{ form.get('authors') or '' }}" placeholder="Ursula K. Le Guin"
-                 class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                 class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
@@ -67,7 +67,7 @@
                      hx-post="/scan" hx-trigger="keyup[key=='Enter' && this.value.trim() !== '']"
                      hx-include="#book-form" hx-target="#modal-body" hx-swap="innerHTML"
                      placeholder="{{ _('Scan or type an ISBN…') }}"
-                     class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                     class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
               <button type="button" hx-post="/scan" hx-include="#book-form"
                       hx-target="#modal-body" hx-swap="innerHTML"
                       class="whitespace-nowrap rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700">{{ _('Look up') }}</button>
@@ -76,7 +76,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Publisher') }}</label>
             <input name="publisher" value="{{ form.get('publisher') or '' }}"
-                   class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                   class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           </div>
         </div>
       </div>
@@ -86,7 +86,7 @@
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Location') }}</label>
-        <select name="location_id" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <select name="location_id" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           <option value="">{{ _('— Not shelved —') }}</option>
           {% for loc, depth in locations %}
             <option value="{{ loc.id }}" {{ 'selected' if form.get('location_id') == loc.id }}>{{ '· ' * depth }}{{ loc.name }}</option>
@@ -96,7 +96,7 @@
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Status') }}</label>
-        <select name="status_id" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <select name="status_id" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           {% for s in statuses %}
             <option value="{{ s.id }}" {{ 'selected' if current_status == s.id }}>{{ s.icon or '' }} {{ status_label(s) }}</option>
           {% endfor %}
@@ -108,7 +108,7 @@
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Cover type') }}</label>
-        <select name="cover_type" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <select name="cover_type" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           <option value="">{{ _('— Not set —') }}</option>
           {% for slug, label in cover_types %}
             <option value="{{ slug }}" {{ 'selected' if form.get('cover_type') == slug }}>{{ _(label) }}</option>
@@ -117,7 +117,7 @@
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Read status') }}</label>
-        <select name="read_status" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <select name="read_status" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           <option value="">{{ _('— Not set —') }}</option>
           {% for slug, label in read_statuses %}
             <option value="{{ slug }}" {{ 'selected' if form.get('read_status') == slug }}>{{ _(label) }}</option>
@@ -131,12 +131,12 @@
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga') }}</label>
         <input name="saga" value="{{ form.get('saga') or '' }}" placeholder="The Expanse"
-               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+               class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga number') }}</label>
         <input name="saga_number" value="{{ form.get('saga_number') or '' }}" inputmode="numeric" placeholder="2"
-               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+               class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
     </div>
 
@@ -165,28 +165,28 @@
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Published') }}</label>
         <input name="published_date" value="{{ form.get('published_date') or form.get('published_year') or '' }}"
-               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+               class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Pages') }}</label>
         <input name="page_count" value="{{ form.get('page_count') or '' }}" inputmode="numeric"
-               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+               class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Language') }}</label>
         <input name="language" value="{{ form.get('language') or '' }}"
-               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+               class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
     </div>
 
     <div>
       <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Description') }}</label>
-      <textarea name="description" rows="3" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('description') or '' }}</textarea>
+      <textarea name="description" rows="3" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('description') or '' }}</textarea>
     </div>
     <div>
       <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Notes') }}</label>
       <textarea name="notes" rows="2" placeholder="{{ _('Signed copy, reading now, borrowed from…') }}"
-                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('notes') or '' }}</textarea>
+                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('notes') or '' }}</textarea>
     </div>
 
     <input type="hidden" name="source" value="{{ form.get('source') or 'manual' }}">
@@ -209,7 +209,7 @@
       <button type="button" @click="$store.ui.close()"
               class="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">{{ _('Cancel') }}</button>
       <button type="submit"
-              class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+              class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-brand-ink shadow-sm hover:bg-brand-700">
         {{ _('Save changes') if is_edit else _('Add to library') }}
       </button>
     </div>

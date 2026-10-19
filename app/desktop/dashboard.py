@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from .cover import CoverImage
 from .repo import get_repo
 from .dialogs import BookDetailsDialog
-from .theme import AMBER, BRAND_500, EMERALD, VIOLET
+from .theme import AMBER, EMERALD, VIOLET, accent
 from .util import badge, card, page_header, section_title
 from .. import i18n
 from ..i18n import _
@@ -110,7 +110,7 @@ class DashboardView(QWidget):
         cards_row = QGridLayout()
         cards_row.setSpacing(16)
         specs = [
-            ("library", _("In the library"), "📚", BRAND_500),
+            ("library", _("In the library"), "📚", accent()),
             ("loans", _("Lent out"), "🤝", AMBER),
             ("wishlist", _("Wishlist"), "⭐", VIOLET),
             ("authors", _("Authors"), "✍️", EMERALD),

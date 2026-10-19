@@ -8,6 +8,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme.dart';
 import 'l10n.dart';
 
 /// Where the app's catalogue comes from.
@@ -33,6 +34,7 @@ class AppPrefs {
   static const _kDirection = 'catalog_dir';
   static const _kMode = 'library_mode';
   static const _kLocalLibrary = 'local_library_name';
+  static const _kColorTheme = 'color_theme';
 
   static Future<AppPrefs> load() async {
     return AppPrefs(await SharedPreferences.getInstance());
@@ -95,6 +97,13 @@ class AppPrefs {
 
   /// The language to use right now: the override, else the device's.
   String get effectiveLanguage => normalizeLanguage(language ?? deviceLanguage());
+
+  /// The accent colour the UI is drawn in, as a known theme slug.
+  String get colorTheme => normalizeThemeSlug(_prefs.getString(_kColorTheme));
+
+  Future<void> setColorTheme(String slug) async {
+    await _prefs.setString(_kColorTheme, normalizeThemeSlug(slug));
+  }
 
   /// The username to prefill on the sign-in screen.
   String? get username => _prefs.getString(_kUsername);

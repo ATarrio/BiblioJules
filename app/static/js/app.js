@@ -4,10 +4,13 @@ document.addEventListener('alpine:init', () => {
   // Theme (dark mode) persisted in localStorage.
   Alpine.store('theme', {
     dark: document.documentElement.classList.contains('dark'),
-    toggle() {
-      this.dark = !this.dark;
+    set(value) {
+      this.dark = value === 'dark';
       document.documentElement.classList.toggle('dark', this.dark);
       localStorage.setItem('theme', this.dark ? 'dark' : 'light');
+    },
+    toggle() {
+      this.set(this.dark ? 'light' : 'dark');
     },
   });
 

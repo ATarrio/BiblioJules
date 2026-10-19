@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../local/library_files.dart';
 import '../local/local_repo.dart';
 import '../local/transfer.dart';
+import '../theme.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
 import 'l10n.dart';
@@ -353,6 +354,30 @@ final languageProvider = NotifierProvider<LanguageController, String>(
 final l10nProvider = Provider<L10n>((ref) {
   final language = ref.watch(languageProvider);
   return ref.watch(catalogCacheProvider).forLanguage(language);
+});
+
+// --------------------------------------------------------------------------- //
+// Colour theme
+// --------------------------------------------------------------------------- //
+class ColorThemeController extends Notifier<String> {
+  @override
+  String build() => ref.watch(prefsProvider).colorTheme;
+
+  Future<void> set(String slug) async {
+    final normalized = normalizeThemeSlug(slug);
+    await ref.read(prefsProvider).setColorTheme(normalized);
+    state = normalized;
+  }
+}
+
+/// The selected accent, by slug. Changing it re-themes the whole app.
+final colorThemeProvider = NotifierProvider<ColorThemeController, String>(
+  ColorThemeController.new,
+);
+
+/// The full palette behind the selected accent.
+final paletteProvider = Provider<ColorTheme>((ref) {
+  return themeBySlug(ref.watch(colorThemeProvider));
 });
 
 // --------------------------------------------------------------------------- //
