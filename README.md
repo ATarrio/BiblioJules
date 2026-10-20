@@ -16,6 +16,23 @@ Host it once and reach it from anywhere: there is a **web app**, a native
 talk to the same account-protected catalog. The phone can also keep a library of
 its own and work with **no server at all**.
 
+### Screenshots
+
+Android app screenshots (all captured on a phone; shown scaled down here):
+
+<img src="docs/screenshots/dashboard.jpeg" width="240" alt="Dashboard"> <img src="docs/screenshots/catalog.jpeg" width="240" alt="Catalog"> <img src="docs/screenshots/discover.jpeg" width="240" alt="Discover">
+<img src="docs/screenshots/add_book.jpeg" width="240" alt="Add book"> <img src="docs/screenshots/book_details.jpeg" width="240" alt="Book details"> <img src="docs/screenshots/settings.jpeg" width="240" alt="Settings">
+<img src="docs/screenshots/locations.jpeg" width="240" alt="Locations"> <img src="docs/screenshots/lend.jpeg" width="240" alt="Lend">
+
+- **Dashboard** — book/author/publisher counts and a status breakdown
+- **Catalog** — book list with covers, status tags, and locations
+- **Discover** — search online catalogs (Open Library, Google Books) by ISBN or title
+- **Add book** — scan an ISBN barcode or type it in; metadata prefills automatically
+- **Book details** — full book page with edit and loan actions
+- **Locations** — hierarchical rooms → bookcases → shelves → boxes
+- **Lend** — check books out and back in
+- **Settings** — language, theme, server URL
+
 ---
 
 ## Features
