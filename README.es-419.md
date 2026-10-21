@@ -17,6 +17,23 @@ escritorio** nativa (Qt/PySide6) y una **app de Android** nativa (Flutter); las
 tres usan el mismo catálogo protegido con cuentas. El teléfono también puede
 guardar una biblioteca propia y funcionar **sin ningún servidor**.
 
+### Capturas de pantalla
+
+Capturas de pantalla de la app Android (todas tomadas en un teléfono; se muestran reducidas aquí):
+
+<img src="docs/screenshots/dashboard.jpeg" width="240" alt="Dashboard"> <img src="docs/screenshots/catalog.jpeg" width="240" alt="Catálogo"> <img src="docs/screenshots/discover.jpeg" width="240" alt="Descubrir">
+<img src="docs/screenshots/add_book.jpeg" width="240" alt="Agregar libro"> <img src="docs/screenshots/book_details.jpeg" width="240" alt="Detalles del libro"> <img src="docs/screenshots/settings.jpeg" width="240" alt="Configuración">
+<img src="docs/screenshots/locations.jpeg" width="240" alt="Ubicaciones"> <img src="docs/screenshots/lend.jpeg" width="240" alt="Préstamo">
+
+- **Dashboard** — conteos de libros, autores y editoriales, y desglose por estado
+- **Catálogo** — lista de libros con portada, etiquetas de estado y ubicaciones
+- **Descubrir** — buscar catálogos en línea (Open Library, Google Books) por ISBN o título
+- **Agregar libro** — escanea un código ISBN o escríbelo; los metadatos se rellenan automáticamente
+- **Detalles del libro** — página completa con acciones de edición y préstamo
+- **Ubicaciones** — jerárquicas: salas → estanterías → repisas → cajas
+- **Préstamo** — prestar y devolver libros
+- **Configuración** — idioma, tema, URL del servidor
+
 ---
 
 ## Funciones
