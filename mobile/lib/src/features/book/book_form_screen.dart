@@ -436,11 +436,61 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: TextFormField(
-                    controller: _saga,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(labelText: l10n.tr('Saga')),
-                  ),
+                  child: Consumer(builder: (context, ref, child) {
+                    final sagasAsync = ref.watch(sagasProvider);
+                    final suggestions = sagasAsync.when(
+                      data: (list) => list,
+                      loading: () => const <String>[],
+                      error: (_, _) => const <String>[],
+                    );
+                    return RawAutocomplete<String>(
+                      textEditingController: _saga,
+                      focusNode: FocusNode(),
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text == '') return suggestions;
+                        final input = textEditingValue.text.toLowerCase();
+                        return suggestions.where((s) => s.toLowerCase().contains(input));
+                      },
+                      onSelected: (String selection) {
+                        setState(() => _saga.text = selection);
+                      },
+                      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                        return TextFormField(
+                          controller: _saga,
+                          focusNode: focusNode,
+                          textCapitalization: TextCapitalization.words,
+                          onFieldSubmitted: (value) => onFieldSubmitted(),
+                          decoration: InputDecoration(labelText: l10n.tr('Saga')),
+                        );
+                      },
+                      displayStringForOption: (String option) => option,
+                      optionsViewBuilder: (context, onSelected, options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 4.0,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 250,
+                              constraints: const BoxConstraints(maxHeight: 250),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (context, index) {
+                                  final option = options.elementAt(index);
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(option),
+                                    onTap: () => onSelected(option),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  }),
                 ),
                 const SizedBox(width: 14),
                 NumberStepper(

@@ -126,12 +126,18 @@
       </div>
     </div>
 
-    <!-- Saga -->
+    <!-- Saga: type-ahead list of existing sagas, but a new name can be typed -->
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga') }}</label>
         <input name="saga" value="{{ form.get('saga') or '' }}" placeholder="The Expanse"
+               list="saga-list"
                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <datalist id="saga-list">
+          {% for saga in sagas %}
+            <option value="{{ saga }}">
+          {% endfor %}
+        </datalist>
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Saga number') }}</label>

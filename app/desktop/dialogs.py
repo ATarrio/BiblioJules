@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QCompleter,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
@@ -136,8 +137,17 @@ class BookDialog(QDialog):
         self.score.setDecimals(1)
         self.score.setSpecialValueText(UNSET_SPIN)
 
-        self.saga = QLineEdit()
+        # An editable combo: the existing saga names are offered, but a new
+        # one can still be typed in. The completer filters as you type.
+        self.saga = QComboBox()
+        self.saga.setEditable(True)
+        self.saga.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.saga.setPlaceholderText("The Expanse")
+        self.saga.setMinimumWidth(220)
+        self.saga_completer = QCompleter([], self.saga)
+        self.saga_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.saga_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.saga.setCompleter(self.saga_completer)
         self.saga_number = QSpinBox()
         self.saga_number.setRange(0, 100_000)
         self.saga_number.setSpecialValueText(UNSET_SPIN)
@@ -198,6 +208,18 @@ class BookDialog(QDialog):
         statuses = repo.list_statuses()
         fill_combo(self.location, location_choices(locations), none_label=_("— none —"))
         fill_combo(self.status, status_choices(statuses), none_label=_("— default —"))
+        # Editable combo with live filtering from existing sagas.
+        sagas = repo.sagas()
+        self.saga.clear()
+        for name in sagas:
+            self.saga.addItem(name)
+        self.saga.addItem("")  # allow a blank option for clearing
+        # Filter suggestions as user types; new names work because the field
+        # is editable and the payload takes the raw text.
+        model_for_filter = QStandardItemModel()
+        for name in sagas:
+            model_for_filter.appendRow(QStandardItem(name))
+        self.saga_completer.setModel(model_for_filter)
         if self.book_id is None:
             default_id = default_status_id(statuses)
             if default_id is not None:
@@ -229,7 +251,9 @@ class BookDialog(QDialog):
         index = self.read_status.findData(book.get("read_status"))
         self.read_status.setCurrentIndex(index if index >= 0 else 0)
         self.score.setValue(float(book["score"]) if book.get("score") else 0.5)
-        self.saga.setText(book.get("saga") or "")
+        # An editable combo: setEditText puts the name in the line edit without
+        # touching the selected index.
+        self.saga.setEditText(book.get("saga") or "")
         self.saga_number.setValue(book.get("saga_number") or 0)
         self.description.setPlainText(book.get("description") or "")
         self.notes.setPlainText(book.get("notes") or "")
@@ -316,7 +340,6 @@ class BookDialog(QDialog):
             self.cover_type,
             self.read_status,
             self.score,
-            self.saga,
             self.saga_number,
             self.description,
         ):
@@ -326,6 +349,7 @@ class BookDialog(QDialog):
                 widget.setCurrentIndex(0)
             else:  # QSpinBox / QDoubleSpinBox
                 widget.setValue(0)
+        self.saga.setEditText("")  # editable saga combo: clear typed text
         self._source = "manual"
         self._set_message(_("Added. Scan or type the next ISBN."), ok=True)
         self.isbn.setFocus()
@@ -363,7 +387,7 @@ class BookDialog(QDialog):
             "cover_type": self.cover_type.currentData(),
             "read_status": self.read_status.currentData(),
             "score": self.score.value() if self.score.value() >= 1 else None,
-            "saga": self.saga.text().strip(),
+            "saga": (self.saga.currentText() or "").strip(),
             "saga_number": self.saga_number.value() or None,
             "description": self.description.toPlainText().strip(),
             "notes": self.notes.toPlainText().strip(),

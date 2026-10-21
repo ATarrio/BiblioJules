@@ -82,6 +82,7 @@ def form_context(db: Session, form: dict, **extra) -> dict:
         "statuses": library.list_statuses(db),
         "locations": library.flatten_locations(db),
         "default_status": library.get_default_status(db),
+        "sagas": library.list_sagas(db),
         **extra,
     }
 
