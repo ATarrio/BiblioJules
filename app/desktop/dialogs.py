@@ -93,9 +93,11 @@ class BookDialog(QDialog):
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
+        # ISBN row first, with a larger scan button
         self.isbn = QLineEdit()
         self.isbn.setPlaceholderText(_("Scan or type an ISBN, then press Look up"))
         self.lookup_btn = QPushButton(_("Look up online"))
+        self.lookup_btn.setProperty("variant", "primary")
         self.lookup_btn.clicked.connect(self._on_lookup_clicked)
         self.isbn.returnPressed.connect(self._on_lookup_clicked)
         isbn_row = QHBoxLayout()

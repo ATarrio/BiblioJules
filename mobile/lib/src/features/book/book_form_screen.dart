@@ -300,6 +300,48 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
           children: [
+            // ISBN field at top with prominent scan button
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _isbn,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: l10n.tr('ISBN'),
+                      prefixIcon: const Icon(Icons.numbers, size: 20),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: l10n.tr('Scan a barcode'),
+                  child: FilledButton.icon(
+                    onPressed: _scan,
+                    icon: const Icon(Icons.qr_code_scanner, size: 24),
+                    label: const Text('Scan'),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: l10n.tr('Look up online'),
+                  child: TextButton.icon(
+                    onPressed: _lookingUp ? null : _lookup,
+                    icon: _lookingUp
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cloud_download_outlined),
+                    label: Text(_lookingUp ? '' : l10n.tr('Look up')),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            // Remaining fields
             if (locations.value != null && statuses.value != null)
               const SizedBox.shrink(),
             TextFormField(
@@ -324,40 +366,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 labelText: l10n.tr('Authors'),
                 helperText: l10n.tr('Separate several authors with commas.'),
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _isbn,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: l10n.tr('ISBN'),
-                      prefixIcon: const Icon(Icons.numbers, size: 20),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: l10n.tr('Scan a barcode'),
-                  onPressed: _scan,
-                  icon: const Icon(Icons.qr_code_scanner),
-                ),
-                const SizedBox(width: 4),
-                IconButton.filledTonal(
-                  tooltip: l10n.tr('Look up online'),
-                  onPressed: _lookingUp ? null : _lookup,
-                  icon: _lookingUp
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.cloud_download_outlined),
-                ),
-              ],
             ),
             const SizedBox(height: 14),
             Row(
