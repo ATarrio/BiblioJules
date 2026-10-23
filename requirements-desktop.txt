@@ -8,4 +8,5 @@
 #
 # PySide6 ships prebuilt wheels for Windows, macOS and Linux and bundles the
 # matching Qt runtime, so no system Qt install is needed.
-PySide6>=6.7
+# Pinned to 6.12.0 as a known safe version.
+PySide6==6.12.0

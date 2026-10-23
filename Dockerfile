@@ -7,7 +7,10 @@
 #
 # …or, more comfortably, with the bundled compose file (see README.md).
 
-FROM python:3.13-slim
+# Pin to a specific safe Python 3.13 patch release (3.13.16, Oct 2026).
+# Avoid the floating "3.13-slim" tag so rebuilds don't silently pull older,
+# vulnerable Python versions.
+FROM python:3.13.16-slim
 
 # No .pyc files, and logs appear immediately instead of being buffered.
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,8 +20,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Dependencies first: this layer stays cached until requirements.txt changes.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Pin pip to a safe version (CVE-2025-8869 affects pip <= 25.2).
+RUN python -m pip install --no-cache-dir --upgrade pip==26.2.2 \
+    && pip install --no-cache-dir -r requirements.txt
 
 # The application itself, plus the migration tooling so Alembic can also be run
 # inside the container (see "Evolving the schema with Alembic" in README.md).
