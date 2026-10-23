@@ -10,6 +10,7 @@ from typing import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -51,6 +52,8 @@ class ImportView(QWidget):
         self.path.setPlaceholderText(_("Choose a CSV file…"))
         browse = QPushButton(_("Browse…"))
         browse.clicked.connect(self._browse)
+        self.only_to_read_check = QCheckBox(_("Only import books with \"to-read\" status"))
+        self.only_to_read_check.setChecked(False)
         preview_btn = QPushButton(_("Preview"))
         preview_btn.clicked.connect(self._preview)
         self.preview_btn = preview_btn
@@ -62,6 +65,7 @@ class ImportView(QWidget):
         file_row.addWidget(self.path, 1)
         file_row.addWidget(browse)
         file_row.addWidget(preview_btn)
+        file_row.addWidget(self.only_to_read_check)
 
         self.message = QLabel(
             _("Goodreads, StoryGraph, or any CSV with ISBN, title and author columns.")
@@ -111,8 +115,8 @@ class ImportView(QWidget):
         )
         layout.addWidget(file_card)
         layout.addWidget(self.message)
-        layout.addWidget(self.table, 1)
         layout.addLayout(actions)
+        layout.addWidget(self.table, 1)
 
     def refresh(self) -> None:
         # The preview is transient; nothing to reload from the database.
@@ -162,6 +166,9 @@ class ImportView(QWidget):
                 error=True,
             )
             return
+
+        if self.only_to_read_check.isChecked():
+            rows = [row for row in rows if row.get("read_status") == "to_read"]
 
         self._rows = [dict(row, _selected=True) for row in rows]
         self._render_rows()

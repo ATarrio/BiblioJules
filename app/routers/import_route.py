@@ -76,6 +76,8 @@ async def import_csv(request: Request, db: Session = Depends(get_db)):
     if not upload or not getattr(upload, "filename", ""):
         return _error(request, _("Please choose a CSV file first."))
 
+    only_to_read = form.get("only_to_read") in ("on", "true", "1", "yes")
+
     content = await upload.read(MAX_CSV_BYTES + 1)
     if len(content) > MAX_CSV_BYTES:
         return _error(request, _("That file is too large (the limit is 20 MB)."), 413)
@@ -94,6 +96,10 @@ async def import_csv(request: Request, db: Session = Depends(get_db)):
     # Enrich rows with online metadata where possible.
     rows = await import_service.enrich_import_rows(rows, db=db)
 
+    # If only_to_read is checked, filter to rows with read_status == "to_read"
+    if only_to_read:
+        rows = [row for row in rows if row.get("read_status") == "to_read"]
+
     # Flag duplicates already in the library.
     for row in rows:
         row["already_in_library"] = bool(
@@ -103,7 +109,7 @@ async def import_csv(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         request,
         "import_preview.html",
-        {"rows": rows, "total": len(rows)},
+        {"rows": rows, "total": len(rows), "only_to_read": only_to_read},
     )
 
 
