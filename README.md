@@ -65,6 +65,19 @@ Android app screenshots (all captured on a phone; shown scaled down here):
 - **Wishlist.** The `Wishlist` status doubles as a to-buy list. The **Discover**
   page lets you search the online catalogues by title/author to add wishlist
   books you don't own yet.
+- **Reading stats & goals.** Track your personal reading statistics and yearly
+  goals (target books/pages) from the Dashboard and a dedicated Reading page.
+  Progress is shown with progress bars; stats include books/pages read, average
+  rating, currently reading, DNF, lost and donated.
+- **Want-to-read list.** A dedicated list of books you plan to read. Books can be
+  added from the book detail page or from the Discover page. Rows from CSV
+  imports without an ISBN are automatically routed here.
+- **CSV import.** Bulk-import a Goodreads or StoryGraph export. The import page
+  shows a preview with metadata enrichment, duplicate detection, and row
+  selection. Rows without ISBNs are added to the want-to-read list.
+- **Cover uploads.** Upload covers from the book detail page. Images are validated
+  by magic bytes, up to 10 MB. Uploaded covers are stored locally under
+  `/covers/` and associated with the book record.
 - **Filter & search.** Filter by status, location (including everything nested
   underneath), author, publisher, read status, and loan state; search across
   title, author, publisher and ISBN.
@@ -591,7 +604,7 @@ a **bearer token**: obtain one with `POST /api/auth/login` and send it as
 | --- | --- |
 | `POST /api/auth/login` | Exchange username/password for a token |
 | `GET /api/auth/me` · `POST /api/auth/logout` | Current account / revoke the token |
-| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`, `dir`) |
+| `GET /api/books` | List/filter books (`search`, `status`, `location`, `author`, `publisher`, `loaned`, `saga`, `read_status`, `sort`, `dir`, `limit`, `offset`) |
 | `GET /api/books/{id}` | One book |
 | `GET /api/books/by-isbn/{isbn}` | One book by ISBN (duplicate checks) |
 | `POST /api/books` · `PUT /api/books/{id}` · `DELETE /api/books/{id}` | Create / update / delete |
@@ -601,6 +614,11 @@ a **bearer token**: obtain one with `POST /api/auth/login` and send it as
 | `GET /api/statuses` · `GET /api/statuses/{id}` · `POST /api/statuses` · `PUT` · `DELETE` | Statuses |
 | `GET /api/authors` · `GET /api/publishers` · `GET /api/sagas` | Filter reference data |
 | `GET /api/dashboard` · `GET /api/stats` | Dashboard aggregate / counters |
+| `GET /api/personal-stats` | Personal reading stats (books/pages read, avg rating, currently reading, DNF, lost/donated) |
+| `GET /api/goals` · `POST /api/goals` | Yearly reading goals (target books/pages, progress) |
+| `GET /api/wantlist` · `POST /api/wantlist` | Want-to-read list CRUD |
+| `DELETE /api/wantlist/{entry_id}` | Remove a want-to-read entry |
+| `POST /api/books/{id}/cover` | Upload a cover image (10 MB max, magic-byte validated) |
 | `GET /api/meta` | Cover types, read statuses, score range, sorts, roles, languages |
 | `GET /api/i18n/{lang}` | String catalog for a language |
 | `GET /api/lookup/isbn/{isbn}` | Online metadata lookup |

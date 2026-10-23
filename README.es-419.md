@@ -70,6 +70,22 @@ Capturas de pantalla de la app Android (todas tomadas en un teléfono; se muestr
   como lista de compras. La página **Descubrir** te permite buscar en los
   catálogos en línea por título/autor para agregar a la lista de deseos libros
   que todavía no tienes.
+- **Estadísticas y metas de lectura.** Controla tus estadísticas de lectura
+  personales y las metas anuales (objetivo de libros/páginas) desde el Panel y una
+  página dedicada de Lectura. El progreso se muestra con barras de progreso; las
+  estadísticas incluyen libros/páginas leídos, calificación media, leyendo ahora,
+  DNF, perdidos y donados.
+- **Lista de deseos por leer.** Lista dedicada de libros que planeas leer. Los
+  libros pueden añadirse desde la página de detalles del libro o desde la página
+  Descubrir. Las filas de las importaciones CSV sin un ISBN se enrutan automáticamente
+  aquí.
+- **Importación CSV.** Importa en lote un archivo de Goodreads o StoryGraph. La
+  página de importación muestra una vista previa con Enriquecimiento de metadatos,
+  detección de duplicados y selección de filas. Las filas sin ISBN se añaden
+  automáticamente a la lista de deseos por leer.
+- **Subidas de portada.** Sube portadas desde la página de detalles del libro. Las
+  imágenes se validan por bytes mágicos, hasta 10 MB. Las portadas subidas se
+  almacenan localmente bajo `/covers/` y están asociadas al registro del libro.
 - **Filtra y busca.** Filtra por estado, ubicación (incluyendo todo lo que está
   anidado debajo), autor, editorial, estado de lectura y estado de préstamo;
   busca por título, autor, editorial e ISBN.
