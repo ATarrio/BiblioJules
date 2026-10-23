@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import MetaData, create_engine, event, inspect, select, text, update
+from sqlalchemy import Index, MetaData, create_engine, event, inspect, select, text, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -160,9 +160,10 @@ def ensure_sync_schema() -> None:
                     update(model).where(model.id == row_id).values(**values)
                 )
         for table in SYNCED_TABLES:
-            connection.execute(
-                text(
-                    f'CREATE UNIQUE INDEX IF NOT EXISTS "ix_{table}_sync_id" '
-                    f'ON "{table}" ("sync_id")'
-                )
-            )
+            model = next(m for m in models if m.__tablename__ == table)
+            # ``CREATE UNIQUE INDEX IF NOT EXISTS`` is SQLite-specific; let
+            # SQLAlchemy emit the right DDL (and check for an existing index)
+            # on every backend, including MySQL.
+            Index(
+                f"ix_{table}_sync_id", model.__table__.c.sync_id, unique=True
+            ).create(connection, checkfirst=True)

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from .. import i18n
 from ..book_fields import READ_STATUSES
 from ..i18n import _
-from .repo import get_repo
+from .repo import RemoteRepo, get_repo
 from .util import (
     ColumnSort,
     card,
@@ -36,6 +36,7 @@ from .util import (
     status_choices,
 )
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog
+from .workers import run_blocking
 
 # (value, English source label); translated when the combo is built.
 _SORTS = [
@@ -52,6 +53,9 @@ class CatalogView(QWidget):
     def __init__(self, on_change: Callable[[], None], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.on_change = on_change
+        self._seq = 0
+        self._deleted = False
+        self.destroyed.connect(self._mark_deleted)
         self._build_ui()
 
     # -- construction ------------------------------------------------------- #
@@ -200,19 +204,33 @@ class CatalogView(QWidget):
         self.reload_books()
 
     # -- data --------------------------------------------------------------- #
+    def _mark_deleted(self, *_: object) -> None:
+        self._deleted = True
+
     def refresh(self) -> None:
+        if isinstance(get_repo(), RemoteRepo):
+            self._request(reload_choices=True)
+            return
         self._reload_choices()
         self.reload_books()
 
     def _reload_choices(self) -> None:
-        current_status = self.status.currentData()
-        current_location = self.location.currentData()
-        current_saga = self.saga.currentData()
-        current_read_status = self.read_status.currentData()
+        current = self._current_choices()
         repo = get_repo()
-        statuses = repo.list_statuses()
-        locations = repo.list_locations()
-        sagas = repo.sagas()
+        self._apply_choices(
+            repo.list_statuses(), repo.list_locations(), repo.sagas(), current
+        )
+
+    def _current_choices(self) -> tuple:
+        return (
+            self.status.currentData(),
+            self.location.currentData(),
+            self.saga.currentData(),
+            self.read_status.currentData(),
+        )
+
+    def _apply_choices(self, statuses, locations, sagas, current: tuple) -> None:
+        current_status, current_location, current_saga, current_read_status = current
         fill_combo(self.status, status_choices(statuses), none_label=_("All statuses"), current=current_status)
         fill_combo(
             self.location, location_choices(locations), none_label=_("All locations"), current=current_location
@@ -230,16 +248,56 @@ class CatalogView(QWidget):
             current=current_read_status,
         )
 
-    def reload_books(self) -> None:
-        self._rows = get_repo().list_books(
-            search=self.search.text().strip() or None,
-            status_id=self.status.currentData(),
-            location_id=self.location.currentData(),
-            saga=self.saga.currentData(),
-            read_status=self.read_status.currentData(),
-            loaned=self.loaned.currentData(),
-            sort=self.sort.currentData() or "recent",
+    def _filters(self) -> dict:
+        return {
+            "search": self.search.text().strip() or None,
+            "status_id": self.status.currentData(),
+            "location_id": self.location.currentData(),
+            "saga": self.saga.currentData(),
+            "read_status": self.read_status.currentData(),
+            "loaned": self.loaned.currentData(),
+            "sort": self.sort.currentData() or "recent",
+        }
+
+    def _request(self, *, reload_choices: bool) -> None:
+        """Fetch remote rows off the GUI thread, ignoring stale replies."""
+        repo = get_repo()
+        self._seq += 1
+        seq = self._seq
+        filters = self._filters()
+        current = self._current_choices()
+
+        def fetch():
+            choices = None
+            if reload_choices:
+                choices = (repo.list_statuses(), repo.list_locations(), repo.sagas())
+            return choices, repo.list_books(**filters)
+
+        run_blocking(
+            fetch,
+            lambda data: self._apply_remote(seq, data, current, reload_choices),
+            lambda message: self._load_failed(seq, message),
         )
+
+    def _apply_remote(self, seq: int, data: tuple, current: tuple, reload_choices: bool) -> None:
+        if self._deleted or seq != self._seq:
+            return
+        choices, rows = data
+        if reload_choices and choices is not None:
+            self._apply_choices(*choices, current)
+        self._rows = rows
+        self._render_rows()
+
+    def _load_failed(self, seq: int, message: str) -> None:
+        if self._deleted or seq != self._seq:
+            return
+        self.summary.setText(_("Could not load: %s") % message)
+
+    def reload_books(self, *_: object) -> None:
+        if isinstance(get_repo(), RemoteRepo):
+            self._request(reload_choices=False)
+            return
+        self._rows = get_repo().list_books(**self._filters())
         self._render_rows()
 
     @staticmethod

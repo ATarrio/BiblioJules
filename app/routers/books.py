@@ -6,11 +6,19 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..i18n import _
 from ..services import library
+from ..services.covers import (
+    MAX_COVER_BYTES,
+    covers_dir,
+    delete_cover,
+    new_cover_name,
+    sniff_image,
+)
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from ..templating import templates
 
@@ -41,6 +49,28 @@ def _redirect(request: Request, url: str) -> Response:
 async def _form_dict(request: Request) -> dict:
     form = await request.form()
     return {key: value for key, value in form.items()}
+
+
+def _fragment_error(request: Request, message: str, status_code: int = 400):
+    """A small HTML error for HTMX, a normal HTTP error otherwise."""
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "_fragment_error.html", {"message": message}, status_code=status_code
+        )
+    raise HTTPException(status_code=status_code, detail=message)
+
+
+def _sniff_image(content: bytes) -> str | None:
+    """Return a safe extension based on the file's own bytes, not its name."""
+    return sniff_image(content)
+
+
+def _covers_dir():
+    return covers_dir()
+
+
+def _delete_cover(cover_url: str | None) -> None:
+    delete_cover(cover_url)
 
 
 def book_to_form(book) -> dict:
@@ -85,6 +115,17 @@ def form_context(db: Session, form: dict, **extra) -> dict:
         "sagas": library.list_sagas(db),
         **extra,
     }
+
+
+def _book_form_error(
+    request: Request, db: Session, data: dict, message: str, *, editing: bool = False
+):
+    return templates.TemplateResponse(
+        request,
+        "books/_form.html",
+        form_context(db, data, error=message, editing=editing),
+        status_code=400,
+    )
 
 
 # Fields a bulk-add carries from one book to the next (everything else on the
@@ -185,7 +226,19 @@ def scan_manual(request: Request, db: Session = Depends(get_db)):
 @router.post("/books", response_class=HTMLResponse)
 async def create_book(request: Request, db: Session = Depends(get_db)):
     data = await _form_dict(request)
-    book = library.create_book(db, data)
+    try:
+        book = library.create_book(db, data)
+    except ValueError as exc:
+        db.rollback()
+        return _book_form_error(request, db, data, str(exc))
+    except IntegrityError:
+        db.rollback()
+        return _book_form_error(
+            request,
+            db,
+            data,
+            _("A book with that ISBN is already in the library."),
+        )
 
     # Bulk mode: keep the modal open with a cleared form so the next book can be
     # scanned straight away, carrying over the shelf, status and notes.
@@ -234,7 +287,20 @@ async def update_book(book_id: int, request: Request, db: Session = Depends(get_
     if book is None:
         raise HTTPException(status_code=404, detail=_("Book not found"))
     data = await _form_dict(request)
-    library.update_book(db, book, data)
+    try:
+        library.update_book(db, book, data)
+    except ValueError as exc:
+        db.rollback()
+        return _book_form_error(request, db, data, str(exc), editing=True)
+    except IntegrityError:
+        db.rollback()
+        return _book_form_error(
+            request,
+            db,
+            data,
+            _("A book with that ISBN is already in the library."),
+            editing=True,
+        )
     return _redirect(request, f"/books/{book.id}")
 
 
@@ -243,7 +309,9 @@ def delete_book(book_id: int, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
         raise HTTPException(status_code=404, detail=_("Book not found"))
+    cover_url = book.cover_url
     library.delete_book(db, book)
+    _delete_cover(cover_url)
     return _redirect(request, "/books")
 
 
@@ -257,17 +325,21 @@ async def lend(book_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=_("Book not found"))
     form = await _form_dict(request)
     if not (form.get("borrower_name") or "").strip():
-        raise HTTPException(status_code=400, detail=_("A borrower name is required"))
-    library.lend_book(
-        db,
-        book,
-        borrower_name=form["borrower_name"],
-        borrower_contact=form.get("borrower_contact"),
-        lent_at=_parse_date(form.get("lent_at")),
-        due_at=_parse_date(form.get("due_at")),
-        notes=form.get("notes"),
-        mark_status=form.get("mark_status") == "on",
-    )
+        return _fragment_error(request, _("A borrower name is required"))
+    try:
+        library.lend_book(
+            db,
+            book,
+            borrower_name=form["borrower_name"],
+            borrower_contact=form.get("borrower_contact"),
+            lent_at=_parse_date(form.get("lent_at")),
+            due_at=_parse_date(form.get("due_at")),
+            notes=form.get("notes"),
+            mark_status=form.get("mark_status") == "on",
+        )
+    except ValueError as exc:
+        db.rollback()
+        return _fragment_error(request, str(exc))
     return _redirect(request, f"/books/{book.id}")
 
 
@@ -281,6 +353,87 @@ async def return_book(book_id: int, request: Request, db: Session = Depends(get_
         db,
         book,
         returned_at=_parse_date(form.get("returned_at")),
-        restore_status=form.get("restore_status", "on") == "on",
+        restore_status=form.get("restore_status") == "on",
     )
+    return _redirect(request, f"/books/{book.id}")
+
+
+# --------------------------------------------------------------------------- #
+# Cover upload
+# --------------------------------------------------------------------------- #
+@router.post("/books/{book_id}/cover", response_class=HTMLResponse)
+async def upload_cover(book_id: int, request: Request, db: Session = Depends(get_db)):
+    """Save an uploaded cover image for a book."""
+    try:
+        length = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        length = 0
+    if length and length > MAX_COVER_BYTES + 64 * 1024:
+        return _fragment_error(request, _("That image is too large (the limit is 10 MB)."), 413)
+
+    book = library.get_book(db, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail=_("Book not found"))
+    form = await _form_dict(request)
+    file = form.get("cover")
+    if not file or not getattr(file, "filename", ""):
+        return _fragment_error(request, _("Please choose an image first."))
+
+    content = await file.read(MAX_COVER_BYTES + 1)
+    if not content:
+        return _fragment_error(request, _("That file is empty."))
+    if len(content) > MAX_COVER_BYTES:
+        return _fragment_error(request, _("That image is too large (the limit is 10 MB)."), 413)
+
+    suffix = _sniff_image(content)
+    if suffix is None:
+        return _fragment_error(request, _("That file is not a supported image."))
+
+    # Random names stop one user from enumerating (or guessing) another's
+    # covers. The sync id keeps two devices from overwriting each other's file.
+    safe_name = new_cover_name(book, suffix)
+    old_url = book.cover_url
+    try:
+        (_covers_dir() / safe_name).write_bytes(content)
+    except OSError:
+        return _fragment_error(request, _("The cover could not be saved."), 500)
+    book.cover_url = f"/covers/{safe_name}"
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        (_covers_dir() / safe_name).unlink(missing_ok=True)
+        return _fragment_error(request, _("The cover could not be saved."))
+    _delete_cover(old_url)
+    return _redirect(request, f"/books/{book.id}")
+
+
+# --------------------------------------------------------------------------- #
+# Want-to-read list (local-only)
+# --------------------------------------------------------------------------- #
+@router.post("/wantlist/add", response_class=HTMLResponse)
+async def add_to_wantlist(request: Request, db: Session = Depends(get_db)):
+    """Add a book from the library to the local want-to-read list."""
+    from ..services.stats import add_want_entry
+
+    form = await _form_dict(request)
+    book_id = form.get("book_id") or request.query_params.get("book_id")
+    try:
+        identifier = int(book_id)
+    except (TypeError, ValueError):
+        return _fragment_error(request, _("No book selected."))
+    book = library.get_book(db, identifier)
+    if book is None:
+        raise HTTPException(status_code=404, detail=_("Book not found"))
+    entry = {
+        "id": f"want-{book.id}",
+        "isbn": book.isbn,
+        "title": book.title,
+        "authors": ", ".join(book.author_names),
+        "publisher": book.publisher.name if book.publisher else None,
+        "notes": "",
+        "added_at": None,
+    }
+    user = getattr(request.state, "user", None)
+    add_want_entry(entry, user_id=getattr(user, "id", None))
     return _redirect(request, f"/books/{book.id}")

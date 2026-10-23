@@ -26,52 +26,52 @@
       class="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-card p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-4">
   <div class="relative sm:col-span-2 lg:col-span-4">
     <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"/></svg>
-    <input type="search" name="search" value="{{ filters.search or '' }}" placeholder="{{ _('Search title, author, publisher, ISBN…') }}"
+    <input type="search" name="search" value="{{ filters.search or '' }}" placeholder="{{ _('Search title, author, publisher, ISBN…') }}" aria-label="{{ _('Search title, author, publisher, ISBN…') }}"
            class="w-full rounded-lg border border-slate-300 bg-card py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
   </div>
 
-  <select name="status" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="status" aria-label="{{ _('All statuses') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All statuses') }}</option>
     {% for s in statuses %}
       <option value="{{ s.id }}" {{ 'selected' if filters.status_id == s.id }}>{{ s.icon or '' }} {{ status_label(s) }}</option>
     {% endfor %}
   </select>
 
-  <select name="location" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="location" aria-label="{{ _('All locations') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All locations') }}</option>
     {% for loc, depth in locations %}
       <option value="{{ loc.id }}" {{ 'selected' if filters.location_id == loc.id }}>{{ '· ' * depth }}{{ loc.name }}</option>
     {% endfor %}
   </select>
 
-  <select name="author" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="author" aria-label="{{ _('All authors') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All authors') }}</option>
     {% for a in authors %}
       <option value="{{ a.id }}" {{ 'selected' if filters.author_id == a.id }}>{{ a.name }}</option>
     {% endfor %}
   </select>
 
-  <select name="publisher" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="publisher" aria-label="{{ _('All publishers') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All publishers') }}</option>
     {% for p in publishers %}
       <option value="{{ p.id }}" {{ 'selected' if filters.publisher_id == p.id }}>{{ p.name }}</option>
     {% endfor %}
   </select>
 
-  <select name="loaned" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="loaned" aria-label="{{ _('Lent & available') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('Lent & available') }}</option>
     <option value="loaned" {{ 'selected' if filters.loaned == 'loaned' }}>{{ _('Lent out only') }}</option>
     <option value="available" {{ 'selected' if filters.loaned == 'available' }}>{{ _('Available only') }}</option>
   </select>
 
-  <select name="saga" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="saga" aria-label="{{ _('All sagas') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All sagas') }}</option>
     {% for saga in sagas %}
       <option value="{{ saga }}" {{ 'selected' if filters.saga == saga }}>{{ saga }}</option>
     {% endfor %}
   </select>
 
-  <select name="read_status" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+  <select name="read_status" aria-label="{{ _('All read statuses') }}" class="rounded-lg border border-slate-300 bg-card py-2 px-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
     <option value="">{{ _('All read statuses') }}</option>
     {% for slug, label in read_statuses %}
       <option value="{{ slug }}" {{ 'selected' if filters.read_status == slug }}>{{ _(label) }}</option>
@@ -91,5 +91,7 @@
   </div>
 </form>
 
-{% include "books/_grid.html" %}
+<div id="book-grid">
+  {% include "books/_grid.html" %}
+</div>
 {% endblock %}

@@ -18,10 +18,11 @@ from PySide6.QtWidgets import (
 )
 
 from .cover import CoverImage
-from .repo import get_repo
+from .repo import RemoteRepo, get_repo
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, EMERALD, VIOLET, accent
 from .util import badge, card, page_header, section_title
+from .workers import run_blocking
 from .. import i18n
 from ..i18n import _
 
@@ -87,6 +88,9 @@ class DashboardView(QWidget):
         super().__init__(parent)
         self.on_change = on_change
         self._values: dict[str, QLabel] = {}
+        self._refreshing = False
+        self._deleted = False
+        self.destroyed.connect(self._mark_deleted)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -106,6 +110,12 @@ class DashboardView(QWidget):
             page_header(_("Your library"), _("Scan a book to add it, or browse your shelves below."))
         )
 
+        self.message = QLabel("")
+        self.message.setObjectName("Hint")
+        self.message.setWordWrap(True)
+        self.message.setVisible(False)
+        layout.addWidget(self.message)
+
         # --- stat cards --------------------------------------------------- #
         cards_row = QGridLayout()
         cards_row.setSpacing(16)
@@ -120,6 +130,17 @@ class DashboardView(QWidget):
             self._values[key] = value
             cards_row.addWidget(frame, 0, column)
         layout.addLayout(cards_row)
+
+        # --- personal reading stats (local-only view) --------------------- #
+        personal_row = QGridLayout()
+        personal_row.setSpacing(16)
+        frame, value = _stat_card("📖", _("Books read"), accent())
+        self._values["books_read"] = value
+        personal_row.addWidget(frame, 0, 0)
+        frame, value = _stat_card("🎯", _("Reading goal"), AMBER)
+        self._values["goal"] = value
+        personal_row.addWidget(frame, 0, 1)
+        layout.addLayout(personal_row)
 
         # --- by status ---------------------------------------------------- #
         layout.addWidget(section_title(_("By status")))
@@ -139,11 +160,52 @@ class DashboardView(QWidget):
         layout.addStretch(1)
 
     # ------------------------------------------------------------------ #
-    def refresh(self) -> None:
+    def _mark_deleted(self, *_: object) -> None:
+        self._deleted = True
+
+    @staticmethod
+    def _fetch() -> tuple:
         repo = get_repo()
         stats = repo.stats()
         counts = repo.status_counts()
         recent = repo.list_books(sort="recent")[:8]
+        # Personal reading stats are a nice-to-have; a failure there must not
+        # blank the headline numbers, exactly as before.
+        try:
+            pstats = repo.personal_stats()
+            goals = repo.goals()
+        except Exception:
+            pstats, goals = {}, {}
+        return stats, counts, recent, pstats, goals
+
+    def refresh(self) -> None:
+        # Remote calls over HTTP would freeze the window on the GUI thread.
+        # Local SQLite is fast enough to keep the simple synchronous path.
+        if isinstance(get_repo(), RemoteRepo):
+            if self._refreshing:
+                return
+            self._refreshing = True
+            run_blocking(self._fetch, self._apply, self._refresh_failed)
+            return
+        self._apply(self._fetch())
+
+    def _refresh_failed(self, message: str) -> None:
+        self._refreshing = False
+        if self._deleted:
+            return
+        for key in ("library", "loans", "wishlist", "authors", "books_read", "goal"):
+            label = self._values.get(key)
+            if label is not None:
+                label.setText("—")
+        self.message.setText(_("Could not load the dashboard: %s") % message)
+        self.message.setVisible(True)
+
+    def _apply(self, data: tuple) -> None:
+        self._refreshing = False
+        if self._deleted:
+            return
+        stats, counts, recent, pstats, goals = data
+        self.message.setVisible(False)
 
         library_count = stats["total"] - stats["wishlist"]
         if library_count < 0:
@@ -152,6 +214,12 @@ class DashboardView(QWidget):
         self._values["loans"].setText(str(stats["loans"]))
         self._values["wishlist"].setText(str(stats["wishlist"]))
         self._values["authors"].setText(str(stats["authors"]))
+
+        # Personal reading stats + goal progress (local-only).
+        done = int(pstats.get("books_read", 0) or 0)
+        self._values["books_read"].setText(str(done))
+        target = int(goals.get("target_books", 0) or 0)
+        self._values["goal"].setText(f"{done}/{target}" if target else _("Not set"))
 
         self._fill_statuses(counts)
         self._fill_recent(recent)

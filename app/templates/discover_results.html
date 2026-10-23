@@ -25,8 +25,7 @@
           </p>
           {% if r.isbn %}<p class="mt-1 text-xs text-slate-400">{{ _('ISBN') }} {{ r.isbn }}</p>{% endif %}
         </div>
-        <form hx-post="/discover/prefill" hx-target="#modal-body" class="self-center"
-              hx-on::after-request="$store.ui.modalTitle = '{{ _('Add to library')|e }}'">
+        <form hx-post="/discover/prefill" hx-target="#modal-body" class="self-center">
           {% for key in ['isbn','title','subtitle','publisher','published_date','published_year','page_count','language','cover_url','description','source'] %}
             <input type="hidden" name="{{ key }}" value="{{ r.get(key) or '' }}">
           {% endfor %}

@@ -19,6 +19,8 @@ import 'features/discover_screen.dart';
 import 'features/home_shell.dart';
 import 'features/locations_screen.dart';
 import 'features/login_screen.dart';
+import 'features/reading/import_screen.dart';
+import 'features/reading/reading_screen.dart';
 import 'features/scan_screen.dart';
 import 'features/settings_screen.dart';
 import 'features/statuses_screen.dart';
@@ -73,27 +75,37 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ScanScreen(),
       ),
       GoRoute(
+        path: '/import-csv',
+        name: 'import-csv',
+        builder: (context, state) => const ImportScreen(),
+      ),
+      GoRoute(
         path: '/book/new',
         name: 'book-new',
         builder: (context, state) => BookFormScreen(
           initialIsbn: state.uri.queryParameters['isbn'],
-          initialData: state.extra is SearchResult ? state.extra as SearchResult : null,
+          initialData: state.extra is SearchResult
+              ? state.extra as SearchResult
+              : null,
         ),
       ),
       GoRoute(
         path: '/book/:id',
         name: 'book',
-        builder: (context, state) => BookDetailScreen(bookId: _intParam(state, 'id')),
+        builder: (context, state) =>
+            BookDetailScreen(bookId: _intParam(state, 'id')),
         routes: [
           GoRoute(
             path: 'edit',
             name: 'book-edit',
-            builder: (context, state) => BookFormScreen(bookId: _intParam(state, 'id')),
+            builder: (context, state) =>
+                BookFormScreen(bookId: _intParam(state, 'id')),
           ),
           GoRoute(
             path: 'loan',
             name: 'book-loan',
-            builder: (context, state) => BookLoanScreen(bookId: _intParam(state, 'id')),
+            builder: (context, state) =>
+                BookLoanScreen(bookId: _intParam(state, 'id')),
           ),
         ],
       ),
@@ -125,6 +137,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/discover',
                 name: 'discover',
                 builder: (context, state) => const DiscoverScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/reading',
+                name: 'reading',
+                builder: (context, state) => const ReadingScreen(),
               ),
             ],
           ),

@@ -113,13 +113,16 @@ class StatusesScreen extends ConsumerWidget {
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem(value: 'edit', child: Text(l10n.tr('Edit'))),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text(
-                          l10n.tr('Delete'),
-                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      // Built-in statuses cannot be deleted; hide the action
+                      // instead of offering a button the server will refuse.
+                      if (!status.isSystem)
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            l10n.tr('Delete'),
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                   onTap: () => showStatusDialog(context, ref, status: status),
@@ -242,8 +245,9 @@ class _StatusDialogState extends ConsumerState<_StatusDialog> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _busy = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 

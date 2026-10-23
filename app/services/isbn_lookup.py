@@ -88,6 +88,11 @@ def _client() -> httpx.AsyncClient:
     )
 
 
+def http_client() -> httpx.AsyncClient:
+    """A configured client for callers that make several lookups in a row."""
+    return _client()
+
+
 # --------------------------------------------------------------------------- #
 # Providers
 # --------------------------------------------------------------------------- #
@@ -179,20 +184,27 @@ def _merge(*records: dict | None) -> dict | None:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
-async def lookup_isbn(raw_isbn: str) -> dict | None:
-    """Look up a single ISBN across all providers. Returns ``None`` if unknown."""
+async def lookup_isbn(raw_isbn: str, *, client: httpx.AsyncClient | None = None) -> dict | None:
+    """Look up a single ISBN across all providers. Returns ``None`` if unknown.
+
+    ``client`` lets a batch (the CSV importer) reuse one connection pool
+    instead of opening a new TLS connection for every row.
+    """
     isbn = normalize_isbn(raw_isbn)
     if not isbn:
         return None
 
-    async with _client() as client:
-        results: list[dict | None] = []
-        for provider in (_open_library_by_isbn, _google_books_by_isbn):
-            try:
-                results.append(await provider(client, isbn))
-            except Exception as exc:  # noqa: BLE001 - never let one API break a scan
-                logger.warning("ISBN lookup provider %s failed: %s", provider.__name__, exc)
-                results.append(None)
+    if client is None:
+        async with _client() as owned:
+            return await lookup_isbn(isbn, client=owned)
+
+    results: list[dict | None] = []
+    for provider in (_open_library_by_isbn, _google_books_by_isbn):
+        try:
+            results.append(await provider(client, isbn))
+        except Exception as exc:  # noqa: BLE001 - never let one API break a scan
+            logger.warning("ISBN lookup provider %s failed: %s", provider.__name__, exc)
+            results.append(None)
 
     merged = _merge(*results)
     if merged:

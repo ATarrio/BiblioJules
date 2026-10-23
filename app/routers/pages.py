@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -187,7 +188,10 @@ def locations_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         request,
         "locations/list.html",
-        {"locations": library.flatten_locations(db)},
+        {
+            "locations": library.flatten_locations(db),
+            "error": request.query_params.get("error"),
+        },
     )
 
 
@@ -226,3 +230,25 @@ def settings_page(request: Request):
     page renders no data of its own — the templates read the current values.
     """
     return templates.TemplateResponse(request, "settings.html", {})
+
+
+@router.get("/reading", response_class=HTMLResponse)
+def reading_page(request: Request, db: Session = Depends(get_db)):
+    """Personal reading stats dashboard page (per-device, local only)."""
+    return templates.TemplateResponse(
+        request, "reading.html", {"current_year": date.today().year}
+    )
+
+
+@router.get("/reading-goals", response_class=HTMLResponse)
+def reading_goals_page(request: Request, db: Session = Depends(get_db)):
+    """Goals live on the reading page; keep the old URL working."""
+    return RedirectResponse("/reading#reading-goals-host", status_code=303)
+
+
+@router.get("/wantlist", response_class=HTMLResponse)
+def wantlist_page(request: Request, db: Session = Depends(get_db)):
+    """Personal want-to-read list (per-device, local only)."""
+    return templates.TemplateResponse(request, "wantlist.html", {})
+
+

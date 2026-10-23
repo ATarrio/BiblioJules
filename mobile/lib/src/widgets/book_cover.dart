@@ -1,6 +1,8 @@
 /// A book's cover art (or a tidy placeholder when there is none).
 library;
 
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -29,17 +31,33 @@ class BookCover extends StatelessWidget {
     final background = Theme.of(context).colorScheme.surfaceContainerHigh;
     final cover = (url == null || url!.isEmpty)
         ? _placeholder(background)
-        : CachedNetworkImage(
-            imageUrl: url!,
-            width: width,
-            height: height,
-            fit: BoxFit.cover,
-            placeholder: (context, url) => _placeholder(background, loading: true),
-            errorWidget: (context, url, error) => _placeholder(background),
-          );
+        : _image(background);
     return ClipRRect(
       borderRadius: radiusValue,
       child: SizedBox(width: width, height: height, child: cover),
+    );
+  }
+
+  Widget _image(Color background) {
+    final uri = Uri.tryParse(url!);
+    // Locally uploaded covers live in the app's documents folder. They are not
+    // network images, so CachedNetworkImage cannot load them.
+    if (uri != null && uri.scheme == 'file') {
+      return Image.file(
+        File.fromUri(uri),
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _placeholder(background),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url!,
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => _placeholder(background, loading: true),
+      errorWidget: (context, url, error) => _placeholder(background),
     );
   }
 

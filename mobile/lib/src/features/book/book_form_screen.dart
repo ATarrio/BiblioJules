@@ -57,6 +57,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   bool _loading = false;
   bool _saving = false;
   bool _lookingUp = false;
+  final _sagaFocus = FocusNode();
 
   bool get _isEdit => widget.bookId != null;
 
@@ -104,6 +105,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     ]) {
       controller.dispose();
     }
+    _sagaFocus.dispose();
     super.dispose();
   }
 
@@ -136,8 +138,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       });
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _loading = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 
@@ -190,8 +193,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _saving = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _saving) setState(() => _saving = false);
     }
   }
 
@@ -257,8 +261,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _lookingUp = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _lookingUp) setState(() => _lookingUp = false);
     }
   }
 
@@ -453,7 +458,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                     );
                     return RawAutocomplete<String>(
                       textEditingController: _saga,
-                      focusNode: FocusNode(),
+                      focusNode: _sagaFocus,
                       optionsBuilder: (TextEditingValue textEditingValue) {
                         if (textEditingValue.text == '') return suggestions;
                         final input = textEditingValue.text.toLowerCase();

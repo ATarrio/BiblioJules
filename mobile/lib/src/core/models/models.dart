@@ -5,6 +5,7 @@ export 'book.dart';
 export 'dashboard.dart';
 export 'loan.dart';
 export 'location.dart';
+export 'reading.dart';
 export 'reference.dart';
 export 'status.dart';
 export 'user.dart';

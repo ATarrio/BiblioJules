@@ -34,12 +34,15 @@ stays in the keystore, so going back and forth needs no re-signing-in.
 - **Catalog** — search, filter (status, shelf, saga, read status, on loan),
   sortable, with pull-to-refresh.
 - **Discover** — search Open Library / Google Books, and add a book by ISBN.
+- **Reading** — personal stats, yearly reading goals with progress, and a
+  want-to-read list. The same tab imports a Goodreads/StoryGraph CSV.
 - **Scan** — read an ISBN barcode with the camera and prefill the book form.
 - **Locations** and **Statuses** — the same nested shelf tree and custom labels
   as the web app.
-- **Books** — add/edit/delete, lend and return, with loan history.
-- **Settings** — which library to use, rename, export, import, theme, language,
-  sign out.
+- **Books** — add/edit/delete, lend and return, with loan history, and upload a
+  cover from the phone's gallery or file picker.
+- **Settings** — which library to use, rename, export/import a whole SQLite
+  library, theme, language, sign out.
 
 Everything except user management (which stays admin-only, on the web) works
 here, exactly as in the browser.
@@ -110,6 +113,11 @@ permission at all** — getting a copy *out* is a separate, deliberate step
 (export, below).
 
 The library can be renamed in **Settings**; the file follows the name.
+
+Reading goals, the want-to-read list and uploaded covers are kept on the phone
+too (under `reading/` and `covers/` in the app's documents folder). Like the
+server's copies they are per device, so they do not travel in the shared-library
+snapshot.
 
 ### Pointing it at your server
 

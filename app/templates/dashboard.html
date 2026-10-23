@@ -32,6 +32,20 @@
   {% endfor %}
 </div>
 
+<!-- Reading stats widget (local, this device only) -->
+<div class="mt-8 rounded-2xl border border-slate-200 bg-card p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <span class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ _('My reading stats') }}</span>
+      <p class="text-xs text-slate-400">{{ _('Based on your library, kept on this device.') }}</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-slate-500 dark:text-slate-400" id="reading-stats-widget">{{ _('Loading…') }}</span>
+      <a href="/reading" class="text-sm font-medium text-brand-600 hover:underline">{{ _('View stats') }} →</a>
+    </div>
+  </div>
+</div>
+
 <!-- Status breakdown -->
 <div class="mt-8">
   <div class="mb-3 flex items-center justify-between">

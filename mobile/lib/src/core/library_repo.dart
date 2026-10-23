@@ -116,6 +116,33 @@ abstract interface class LibraryRepo {
 
   Future<Stats> stats();
 
+  // --- reading stats, goals and want-to-read list ------------------------- //
+  /// Personal totals computed from the catalogue (books/pages read, ratings…).
+  Future<ReadingStats> personalStats();
+
+  /// The current reading goal. Local mode keeps one per device; a server keeps
+  /// one per account.
+  Future<ReadingGoals> readingGoals();
+
+  Future<void> saveReadingGoals(ReadingGoals goals);
+
+  /// Books to look for next. Local mode keeps one per device; a server keeps
+  /// one per account.
+  Future<List<WantEntry>> wantList();
+
+  Future<void> addWant(WantEntry entry);
+
+  Future<void> removeWant(String id);
+
+  /// Replace a book's cover with [bytes]. Returns the updated book.
+  ///
+  /// The image is validated by both back ends; a non-image is rejected.
+  Future<Book> uploadCover(
+    int bookId, {
+    required String filename,
+    required List<int> bytes,
+  });
+
   /// Online metadata for one ISBN (Open Library / Google Books).
   Future<SearchResult?> lookupIsbn(String isbn);
 

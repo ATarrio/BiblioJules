@@ -99,7 +99,7 @@ class MainActivity : FlutterActivity() {
                 call.argument<String>("name") ?: "library.sqlite",
             )
         }
-        startActivityForResult(intent, REQUEST_EXPORT)
+        launch(intent, REQUEST_EXPORT, result)
     }
 
     private fun askForImport(call: MethodCall, result: MethodChannel.Result) {
@@ -117,11 +117,30 @@ class MainActivity : FlutterActivity() {
         pendingResult = result
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            // Deliberately wide: a database file usually has no useful type,
-            // and the app validates whatever comes back.
-            type = "*/*"
+            // Wide by default: a database file usually has no useful type,
+            // and the app validates whatever comes back. CSV/image pickers
+            // pass a narrower hint.
+            type = call.argument<String>("type") ?: "*/*"
         }
-        startActivityForResult(intent, REQUEST_PICK)
+        launch(intent, REQUEST_PICK, result)
+    }
+
+    /**
+     * Start a picker, clearing the pending request if the activity refuses.
+     *
+     * Without this, a throw from `startActivityForResult` (for example when no
+     * activity can handle the intent) leaves `pendingResult` set forever and
+     * every later pick reports "busy".
+     */
+    private fun launch(intent: Intent, requestCode: Int, result: MethodChannel.Result) {
+        try {
+            startActivityForResult(intent, requestCode)
+        } catch (error: Exception) {
+            pendingResult = null
+            pendingSource = null
+            pendingTarget = null
+            result.error("launch_failed", error.message ?: "Could not open the file picker.", null)
+        }
     }
 
     /**
@@ -146,7 +165,7 @@ class MainActivity : FlutterActivity() {
                     Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
             )
         }
-        startActivityForResult(intent, REQUEST_FOLDER)
+        launch(intent, REQUEST_FOLDER, result)
     }
 
     // --- moving a snapshot in and out of a granted folder ------------------- //

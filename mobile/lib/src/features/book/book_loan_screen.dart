@@ -69,8 +69,9 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _busy = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 
@@ -86,8 +87,9 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _busy = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 

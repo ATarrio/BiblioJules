@@ -7,6 +7,7 @@ combine) live in exactly one place.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from sqlalchemy import delete, func, or_, select, update
@@ -79,15 +80,6 @@ def _to_int(value) -> int | None:
         return None
 
 
-def _to_id(value) -> int | None:
-    if value in (None, "", "none", "null"):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _to_score(value) -> float | None:
     """Parse a 0.5–5.0 star score (blank/0 becomes None), snapped to half stars."""
     if value in (None, ""):
@@ -100,6 +92,35 @@ def _to_score(value) -> float | None:
         return None
     score = round(score / SCORE_STEP) * SCORE_STEP
     return max(MIN_SCORE, min(MAX_SCORE, score))
+
+
+_HEX_COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def normalize_color(value: str | None, default: str = "#64748b") -> str:
+    """Return a safe ``#rgb``/``#rrggbb`` colour for inline CSS.
+
+    Status colours are written straight into a ``style`` attribute, so a value
+    from an API client must never be able to smuggle arbitrary CSS in there.
+    """
+    candidate = (value or "").strip()
+    if not candidate:
+        return default
+    return candidate if _HEX_COLOUR.match(candidate) else default
+
+
+def _check_reference(db: Session, model, value, message: str) -> int | None:
+    """Validate an optional foreign key coming from a form or API payload."""
+    if value in (None, "", "none", "null"):
+        return None
+    try:
+        identifier = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if db.get(model, identifier) is None:
+        raise ValueError(message)
+    return identifier
+
 
 
 # --------------------------------------------------------------------------- #
@@ -153,9 +174,13 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
     if "saga_number" in data:
         book.saga_number = _to_int(data.get("saga_number"))
     if "location_id" in data:
-        book.location_id = _to_id(data.get("location_id"))
+        book.location_id = _check_reference(
+            db, Location, data.get("location_id"), _("That location is not valid.")
+        )
     if "status_id" in data:
-        book.status_id = _to_id(data.get("status_id"))
+        book.status_id = _check_reference(
+            db, Status, data.get("status_id"), _("That status is not valid.")
+        )
 
     if "authors" in data:
         names = _split_names(data.get("authors"))
@@ -172,7 +197,7 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
     return book
 
 
-def create_book(db: Session, data: dict) -> Book:
+def create_book(db: Session, data: dict, *, commit: bool = True) -> Book:
     book = Book(title="Untitled")
     # Add to the session before wiring up relationships so the author/publisher
     # back-references are tracked correctly.
@@ -182,8 +207,13 @@ def create_book(db: Session, data: dict) -> Book:
         if default:
             data = {**data, "status_id": default.id}
     apply_book_data(db, book, data)
-    db.commit()
-    db.refresh(book)
+    if commit:
+        db.commit()
+        db.refresh(book)
+    else:
+        # The caller owns the transaction (used by the CSV importer, which must
+        # commit the whole batch or none of it).
+        db.flush()
     return book
 
 
@@ -349,9 +379,20 @@ def lend_book(
     notes: str | None = None,
     mark_status: bool = True,
 ) -> Loan:
+    borrower_name = (borrower_name or "").strip()
+    if not borrower_name:
+        raise ValueError(_("A borrower name is required."))
+    # A book can only be in one place at a time. Without this check a double
+    # click (or two clients) creates two active loans and returning closes only
+    # the one the UI happened to see.
+    active = db.scalar(
+        select(Loan).where(Loan.book_id == book.id, Loan.returned_at.is_(None))
+    )
+    if active is not None:
+        raise ValueError(_("This book is already lent out."))
     loan = Loan(
         book_id=book.id,
-        borrower_name=borrower_name.strip(),
+        borrower_name=borrower_name,
         borrower_contact=(borrower_contact or "").strip() or None,
         lent_at=lent_at or date.today(),
         due_at=due_at,
@@ -373,15 +414,25 @@ def return_loan(
     *,
     returned_at: date | None = None,
     restore_status: bool = True,
-) -> None:
-    loan = book.active_loan
-    if loan is not None:
-        loan.returned_at = returned_at or date.today()
+) -> bool:
+    """Mark every active loan for ``book`` returned.
+
+    Returns ``False`` when the book was not actually lent out — in that case the
+    status is deliberately left alone (returning a book that never left the
+    shelf must not silently flip it to "available").
+    """
+    active = [loan for loan in book.loans if loan.returned_at is None]
+    if not active:
+        return False
+    when = returned_at or date.today()
+    for loan in active:
+        loan.returned_at = when
     if restore_status:
         available = get_status_by_slug(db, "available")
         if available:
             book.status_id = available.id
     db.commit()
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -411,7 +462,7 @@ def create_status(db: Session, *, name: str, color: str, icon=None, description=
     status = Status(
         name=name,
         slug=_unique_status_slug(db, slug or slugify(name)),
-        color=color or "#64748b",
+        color=normalize_color(color),
         icon=icon or None,
         description=(description or "").strip() or None,
         sort_order=sort_order,
@@ -473,7 +524,7 @@ def update_status(db: Session, status: Status, *, name=None, color=None, icon=No
         if not status.is_system:
             status.slug = _unique_status_slug(db, slugify(status.name), exclude_id=status.id)
     if color is not None and color.strip():
-        status.color = color.strip()
+        status.color = normalize_color(color, default=status.color)
     if icon is not None:
         status.icon = icon.strip() or None
     if description is not None:
@@ -506,7 +557,9 @@ def flatten_locations(db: Session) -> list[tuple[Location, int]]:
 def create_location(db: Session, *, name: str, parent_id=None, kind=None, description=None) -> Location:
     location = Location(
         name=name.strip(),
-        parent_id=_to_id(parent_id),
+        parent_id=_check_reference(
+            db, Location, parent_id, _("The parent location is not valid.")
+        ),
         kind=(kind or "").strip() or None,
         description=(description or "").strip() or None,
     )
@@ -534,7 +587,9 @@ def update_location(db: Session, location: Location, *, name=None, parent_id=...
     if name is not None:
         location.name = name.strip() or location.name
     if parent_id is not ...:
-        new_parent = _to_id(parent_id)
+        new_parent = _check_reference(
+            db, Location, parent_id, _("The parent location is not valid.")
+        )
         # Never allow a location to become its own ancestor.
         if new_parent is not None and new_parent in location.descendant_ids():
             raise ValueError(_("A location cannot be moved inside itself."))

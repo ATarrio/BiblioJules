@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../local/file_picker.dart';
 import '../local/library_files.dart';
 import '../local/local_repo.dart';
 import '../local/sync.dart';
@@ -32,15 +33,20 @@ Duration? _noRetry(int retryCount, Object error) => null;
 // Booted once in main()
 // --------------------------------------------------------------------------- //
 final prefsProvider = Provider<AppPrefs>(
-  (ref) => throw UnimplementedError('prefsProvider must be overridden in main()'),
+  (ref) =>
+      throw UnimplementedError('prefsProvider must be overridden in main()'),
 );
 
 final catalogCacheProvider = Provider<CatalogCache>(
-  (ref) => throw UnimplementedError('catalogCacheProvider must be overridden in main()'),
+  (ref) => throw UnimplementedError(
+    'catalogCacheProvider must be overridden in main()',
+  ),
 );
 
 final apiClientProvider = Provider<ApiClient>(
-  (ref) => throw UnimplementedError('apiClientProvider must be overridden in main()'),
+  (ref) => throw UnimplementedError(
+    'apiClientProvider must be overridden in main()',
+  ),
 );
 
 /// Where every screen reads and writes its data.
@@ -74,6 +80,11 @@ final libraryTransferProvider = Provider<LibraryTransfer>(
 /// mocked channel without touching export/import.
 final sharedFolderProvider = Provider<SharedFolder>((ref) => SharedFolder());
 
+/// The Android document picker, used for CSV imports and cover images.
+final deviceFilePickerProvider = Provider<DeviceFilePicker>(
+  (ref) => DeviceFilePicker(),
+);
+
 /// A sync run against the folder the user chose, or ``null`` when there is
 /// nothing to sync with yet (no folder, or the library lives on a server).
 final librarySyncProvider = Provider<LibrarySync?>((ref) {
@@ -90,7 +101,9 @@ final librarySyncProvider = Provider<LibrarySync?>((ref) {
 
 /// The session restored from disk before the first frame.
 final bootSessionProvider = Provider<SessionState>(
-  (ref) => throw UnimplementedError('bootSessionProvider must be overridden in main()'),
+  (ref) => throw UnimplementedError(
+    'bootSessionProvider must be overridden in main()',
+  ),
 );
 
 final secureStoreProvider = Provider<SecureStore>((ref) => SecureStore());
@@ -183,12 +196,19 @@ class SessionController extends Notifier<SessionState> {
   }) async {
     final url = normalizeBaseUrl(baseUrl);
     if (!isValidBaseUrl(url)) {
-      state = state.copyWith(error: 'Enter the address of your library server.');
+      state = state.copyWith(
+        error: 'Enter the address of your library server.',
+      );
       return false;
     }
     _api.setBaseUrl(url);
     _api.setToken(null);
-    state = state.copyWith(baseUrl: url, busy: true, clearError: true, clearNotice: true);
+    state = state.copyWith(
+      baseUrl: url,
+      busy: true,
+      clearError: true,
+      clearNotice: true,
+    );
     try {
       final result = await _api.login(username: username, password: password);
       _api.setToken(result.token);
@@ -200,7 +220,11 @@ class SessionController extends Notifier<SessionState> {
       // already "signed in" and never shows this form. This matters after a
       // local library failed to open, when the mode preference is still local.)
       await _prefs.setMode(LibraryMode.server);
-      state = SessionState(baseUrl: url, token: result.token, user: result.user);
+      state = SessionState(
+        baseUrl: url,
+        token: result.token,
+        user: result.user,
+      );
       return true;
     } on ApiException catch (error) {
       _api.setToken(null);
@@ -543,85 +567,159 @@ class CatalogQueryController extends Notifier<CatalogQuery> {
     return defaultDesc ? 'desc' : 'asc';
   }
 
-  void reset() => state = CatalogQuery(sort: state.sort, direction: state.direction);
+  void reset() =>
+      state = CatalogQuery(sort: state.sort, direction: state.direction);
 }
 
 final catalogQueryProvider =
-    NotifierProvider<CatalogQueryController, CatalogQuery>(CatalogQueryController.new);
+    NotifierProvider<CatalogQueryController, CatalogQuery>(
+      CatalogQueryController.new,
+    );
 
 // --------------------------------------------------------------------------- //
 // Cached server data
 // --------------------------------------------------------------------------- //
-final booksProvider = FutureProvider<List<Book>>((ref) {
-  ref.watch(sessionKeyProvider);
-  final query = ref.watch(catalogQueryProvider);
-  final api = ref.watch(repoProvider);
-  return api.listBooks(
-    search: query.search.isEmpty ? null : query.search,
-    statusId: query.statusId,
-    locationId: query.locationId,
-    authorId: query.authorId,
-    publisherId: query.publisherId,
-    loaned: query.loaned ? 'loaned' : null,
-    saga: query.saga.isEmpty ? null : query.saga,
-    readStatus: query.readStatus,
-    sort: query.sort,
-    direction: query.direction,
-  );
-}, retry: _noRetry, isAutoDispose: true);
+final booksProvider = FutureProvider<List<Book>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    final query = ref.watch(catalogQueryProvider);
+    final api = ref.watch(repoProvider);
+    return api.listBooks(
+      search: query.search.isEmpty ? null : query.search,
+      statusId: query.statusId,
+      locationId: query.locationId,
+      authorId: query.authorId,
+      publisherId: query.publisherId,
+      loaned: query.loaned ? 'loaned' : null,
+      saga: query.saga.isEmpty ? null : query.saga,
+      readStatus: query.readStatus,
+      sort: query.sort,
+      direction: query.direction,
+    );
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final bookProvider = FutureProvider.family<Book, int>((ref, id) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).getBook(id);
-}, retry: _noRetry, isAutoDispose: true);
+final bookProvider = FutureProvider.family<Book, int>(
+  (ref, id) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).getBook(id);
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final bookLoansProvider = FutureProvider.family<List<Loan>, int>((ref, bookId) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).bookLoans(bookId);
-}, retry: _noRetry, isAutoDispose: true);
+final bookLoansProvider = FutureProvider.family<List<Loan>, int>(
+  (ref, bookId) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).bookLoans(bookId);
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final locationsProvider = FutureProvider<List<Location>>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).listLocations();
-}, retry: _noRetry, isAutoDispose: true);
+final locationsProvider = FutureProvider<List<Location>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).listLocations();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final statusesProvider = FutureProvider<List<Status>>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).listStatuses();
-}, retry: _noRetry, isAutoDispose: true);
+final statusesProvider = FutureProvider<List<Status>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).listStatuses();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final sagasProvider = FutureProvider<List<String>>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).listSagas();
-}, retry: _noRetry, isAutoDispose: true);
+final sagasProvider = FutureProvider<List<String>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).listSagas();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final authorsProvider = FutureProvider<List<RefItem>>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).listAuthors();
-}, retry: _noRetry, isAutoDispose: true);
+final authorsProvider = FutureProvider<List<RefItem>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).listAuthors();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final publishersProvider = FutureProvider<List<RefItem>>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).listPublishers();
-}, retry: _noRetry, isAutoDispose: true);
+final publishersProvider = FutureProvider<List<RefItem>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).listPublishers();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final dashboardProvider = FutureProvider<DashboardData>((ref) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).dashboard();
-}, retry: _noRetry, isAutoDispose: true);
+final dashboardProvider = FutureProvider<DashboardData>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).dashboard();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
+
+final readingStatsProvider = FutureProvider<ReadingStats>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).personalStats();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
+
+final readingGoalsProvider = FutureProvider<ReadingGoals>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).readingGoals();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
+
+final wantListProvider = FutureProvider<List<WantEntry>>(
+  (ref) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).wantList();
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
 // --------------------------------------------------------------------------- //
 // Lookups (kept alive so results survive a scroll/tab change)
 // --------------------------------------------------------------------------- //
-final isbnLookupProvider = FutureProvider.family<SearchResult?, String>((ref, isbn) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).lookupIsbn(isbn);
-}, retry: _noRetry, isAutoDispose: true);
+final isbnLookupProvider = FutureProvider.family<SearchResult?, String>(
+  (ref, isbn) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).lookupIsbn(isbn);
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
-final onlineSearchProvider = FutureProvider.family<List<SearchResult>, String>((ref, query) {
-  ref.watch(sessionKeyProvider);
-  return ref.watch(repoProvider).searchBooks(query);
-}, retry: _noRetry, isAutoDispose: true);
+final onlineSearchProvider = FutureProvider.family<List<SearchResult>, String>(
+  (ref, query) {
+    ref.watch(sessionKeyProvider);
+    return ref.watch(repoProvider).searchBooks(query);
+  },
+  retry: _noRetry,
+  isAutoDispose: true,
+);
 
 // --------------------------------------------------------------------------- //
 // Invalidation helpers
@@ -631,9 +729,17 @@ void invalidateBooks(WidgetRef ref) {
   ref.invalidate(booksProvider);
   ref.invalidate(bookProvider);
   ref.invalidate(dashboardProvider);
+  ref.invalidate(readingStatsProvider);
   ref.invalidate(sagasProvider);
   ref.invalidate(authorsProvider);
   ref.invalidate(publishersProvider);
+}
+
+/// Drop the personal reading data (after saving goals or editing the list).
+void invalidateReading(WidgetRef ref) {
+  ref.invalidate(readingStatsProvider);
+  ref.invalidate(readingGoalsProvider);
+  ref.invalidate(wantListProvider);
 }
 
 /// Drop cached locations (and the book lists that embed them).
@@ -652,6 +758,7 @@ void invalidateStatuses(WidgetRef ref) {
 /// fetch it again.
 void refreshEverything(WidgetRef ref) {
   invalidateBooks(ref);
+  invalidateReading(ref);
   ref.invalidate(locationsProvider);
   ref.invalidate(statusesProvider);
 }

@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 import httpx
 
+from .. import preferences
 from ..i18n import _
 from ..models import Location, Status
 from ..services import library
@@ -157,6 +158,26 @@ class Repo(ABC):
     @abstractmethod
     def status_counts(self) -> list[dict]:
         """``[{"status": {...}, "count": n}, ...]`` for every status."""
+
+    @abstractmethod
+    def personal_stats(self) -> dict:
+        """Reading stats derived from the library (shared data, local view)."""
+
+    @abstractmethod
+    def goals(self) -> dict:
+        """Per-device reading goals (local-only)."""
+
+    @abstractmethod
+    def save_goals(self, goals: dict) -> None: ...
+
+    @abstractmethod
+    def want_list(self) -> list[dict]: ...
+
+    @abstractmethod
+    def add_want(self, entry: dict) -> None: ...
+
+    @abstractmethod
+    def remove_want(self, entry_id: str) -> None: ...
 
     @abstractmethod
     def sagas(self) -> list[str]: ...
@@ -327,6 +348,37 @@ class LocalRepo(Repo):
                 for status, count in library.status_counts(db)
             ]
 
+    def personal_stats(self) -> dict:
+        from ..services.stats import compute_stats
+
+        with session_scope() as db:
+            return compute_stats(db)
+
+    def goals(self) -> dict:
+        from ..services.stats import load_goals
+
+        return load_goals()
+
+    def save_goals(self, goals: dict) -> None:
+        from ..services.stats import save_goals
+
+        save_goals(goals)
+
+    def want_list(self) -> list[dict]:
+        from ..services.stats import load_want_list
+
+        return load_want_list()
+
+    def add_want(self, entry: dict) -> None:
+        from ..services.stats import add_want_entry
+
+        add_want_entry(entry)
+
+    def remove_want(self, entry_id: str) -> None:
+        from ..services.stats import remove_want_entry
+
+        remove_want_entry(entry_id=entry_id)
+
     def sagas(self) -> list[str]:
         with session_scope() as db:
             return library.list_sagas(db)
@@ -378,6 +430,13 @@ class RemoteRepo(Repo):
 
         if response.status_code == 401:
             self.token_rejected = True
+            # The server no longer accepts this token. Forget it so the next
+            # launch does not present it as a valid session.
+            self.token = ""
+            try:
+                preferences.set_remote_session(token="", account="")
+            except OSError:
+                pass
             raise AuthError(
                 _("Your session has expired. Please sign in again from File → Settings.")
             )
@@ -440,8 +499,22 @@ class RemoteRepo(Repo):
             params["read_status"] = read_status
         if loaned:
             params["loaned"] = loaned
-        data = self._request("GET", "/api/books", params=params) or {}
-        return data.get("items", [])
+        # The API pages at 500 rows; loop so a large catalogue is complete.
+        books: list[dict] = []
+        offset = 0
+        while True:
+            params["limit"] = 500
+            params["offset"] = offset
+            data = self._request("GET", "/api/books", params=params) or {}
+            page = data.get("items") or []
+            books.extend(page)
+            total = data.get("count")
+            # No count means an older server returned its whole catalogue in
+            # one page; asking again would loop forever.
+            if not page or not isinstance(total, int) or len(books) >= total:
+                break
+            offset += len(page)
+        return books
 
     def get_book(self, book_id: int) -> dict | None:
         return self._optional("GET", f"/api/books/{book_id}")
@@ -518,6 +591,24 @@ class RemoteRepo(Repo):
         data = self._request("GET", "/api/dashboard") or {}
         return data.get("status_counts", [])
 
+    def personal_stats(self) -> dict:
+        return self._request("GET", "/api/personal-stats") or {}
+
+    def goals(self) -> dict:
+        return self._request("GET", "/api/goals") or {}
+
+    def save_goals(self, goals: dict) -> None:
+        self._request("POST", "/api/goals", json=goals)
+
+    def want_list(self) -> list[dict]:
+        return self._request("GET", "/api/wantlist") or []
+
+    def add_want(self, entry: dict) -> None:
+        self._request("POST", "/api/wantlist", json=entry)
+
+    def remove_want(self, entry_id: str) -> None:
+        self._request("DELETE", f"/api/wantlist/{quote(entry_id, safe='')}")
+
     def sagas(self) -> list[str]:
         return self._request("GET", "/api/sagas") or []
 
@@ -550,7 +641,16 @@ def login(base_url: str, username: str, password: str, *, label: str | None = No
         raise AuthError(_("Incorrect username or password."))
     if response.status_code >= 400:
         raise RepoError(_error_detail(response))
-    return response.json()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RepoError(_("The server did not return a valid response.")) from exc
+    if not isinstance(data, dict):
+        raise RepoError(_("The server did not return a valid response."))
+    token = data.get("token")
+    if not isinstance(token, str) or not token.strip():
+        raise RepoError(_("The server did not return a sign-in token."))
+    return data
 
 
 def device_label() -> str:

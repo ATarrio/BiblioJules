@@ -83,13 +83,56 @@ class _FakeServer implements HttpClientAdapter {
       body = <Object>[];
     } else if (path == '/api/dashboard') {
       body = {
-        'stats': {'total': 1, 'authors': 1, 'publishers': 1, 'loans': 0, 'wishlist': 0},
+        'stats': {
+          'total': 1,
+          'authors': 1,
+          'publishers': 1,
+          'loans': 0,
+          'wishlist': 0,
+        },
         'status_counts': [
           {'status': _available, 'count': 1},
         ],
         'recent': [_dune],
         'active_loans': <Object>[],
       };
+    } else if (path == '/api/personal-stats') {
+      body = {
+        'total_books': 1,
+        'in_library': 1,
+        'books_read': 1,
+        'pages_read': 412,
+        'avg_rating': 4.5,
+        'currently_reading': 0,
+        'loans': 0,
+        'wishlist': 0,
+        'authors': 1,
+        'status_breakdown': {
+          'read': 1,
+          'currently_reading': 0,
+          'dnf': 0,
+          'lost': 0,
+          'donated': 0,
+          'unread': 0,
+          'to_read': 0,
+        },
+      };
+    } else if (path == '/api/goals') {
+      body = {
+        'year': 2026,
+        'target_books': 12,
+        'target_pages': 3000,
+        'progress': {},
+      };
+    } else if (path == '/api/wantlist') {
+      body = [
+        {
+          'id': 'want-1',
+          'title': 'Ubik',
+          'authors': 'Philip K. Dick',
+          'isbn': '9780547572298',
+        },
+      ];
     }
     return ResponseBody.fromString(
       json.encode(body ?? {'detail': 'Not found.'}),
@@ -126,7 +169,11 @@ Future<ProviderContainer> _boot(
   });
   final (prefs, catalog) = loaded!;
   final dio = Dio()..httpClientAdapter = server;
-  final api = ApiClient(baseUrl: _server, token: signedIn ? 'bj_test' : null, dio: dio);
+  final api = ApiClient(
+    baseUrl: _server,
+    token: signedIn ? 'bj_test' : null,
+    dio: dio,
+  );
   return ProviderContainer.test(
     overrides: [
       prefsProvider.overrideWithValue(prefs),
@@ -157,7 +204,11 @@ Future<void> _pumpApp(WidgetTester tester, ProviderContainer container) async {
 
 void main() {
   testWidgets('signed out, the app asks which library to use', (tester) async {
-    final container = await _boot(tester, signedIn: false, server: _FakeServer());
+    final container = await _boot(
+      tester,
+      signedIn: false,
+      server: _FakeServer(),
+    );
     await _pumpApp(tester, container);
 
     expect(find.text('Sign in to your library'), findsOneWidget);
@@ -171,7 +222,9 @@ void main() {
     expect(find.byType(NavigationBar), findsNothing);
   });
 
-  testWidgets('signed in, the catalog lists what the server has', (tester) async {
+  testWidgets('signed in, the catalog lists what the server has', (
+    tester,
+  ) async {
     final server = _FakeServer();
     final container = await _boot(tester, signedIn: true, server: server);
     await _pumpApp(tester, container);
@@ -189,27 +242,132 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.dashboard_outlined));
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Dashboard'), findsOneWidget);
     expect(find.text('RECENTLY ADDED'), findsOneWidget);
     expect(find.text('BY STATUS'), findsOneWidget);
     expect(server.requested, contains('/api/dashboard'));
 
     await tester.tap(find.byIcon(Icons.warehouse_outlined));
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Locations'), findsOneWidget);
     expect(find.text('No locations yet.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.label_outline));
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Statuses'), findsOneWidget);
     expect(find.text('Available'), findsWidgets);
 
-    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.auto_stories_outlined),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Books read'), findsOneWidget);
+    expect(find.text('412'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.menu_book_outlined),
+      ),
+    );
     await tester.pumpAndSettle();
     // The dashboard branch stays mounted in the shell's stack, so its recent
     // list and the catalogue both show "Dune" now.
     expect(find.text('Dune'), findsWidgets);
   });
 
+  testWidgets('the reading tab shows stats, goals and the want list', (
+    tester,
+  ) async {
+    final server = _FakeServer();
+    final container = await _boot(tester, signedIn: true, server: server);
+    await _pumpApp(tester, container);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.auto_stories_outlined),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AppBar, 'Reading stats'), findsOneWidget);
+    expect(find.text('Books read'), findsOneWidget);
+    expect(find.text('412'), findsOneWidget);
+    expect(server.requested, contains('/api/personal-stats'));
+    expect(server.requested, contains('/api/goals'));
+
+    final statsScroll = find
+        .ancestor(
+          of: find.text('Books read'),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('Reading goals'),
+      200,
+      scrollable: statsScroll,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Reading goals'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(TabBar),
+        matching: find.text('Want to read'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The app bar follows the sub-tab: the bottom bar is icon-only. The title
+    // now repeats the tab label, so "Want to read" sits twice inside the bar.
+    expect(find.widgetWithText(AppBar, 'Want to read'), findsNWidgets(2));
+    expect(find.text('Ubik'), findsOneWidget);
+    expect(server.requested, contains('/api/wantlist'));
+  });
+
+  testWidgets('six destinations fit a narrow phone', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _boot(
+      tester,
+      signedIn: true,
+      server: _FakeServer(),
+    );
+    await _pumpApp(tester, container);
+
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(bar.labelBehavior, NavigationDestinationLabelBehavior.alwaysHide);
+    expect(bar.destinations, hasLength(6));
+    expect(tester.takeException(), isNull);
+
+    await container.read(languageProvider.notifier).set('es-419');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.auto_stories_outlined),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.widgetWithText(AppBar, 'Estadísticas de lectura'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a book opens its detail page', (tester) async {
-    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+    final container = await _boot(
+      tester,
+      signedIn: true,
+      server: _FakeServer(),
+    );
     await _pumpApp(tester, container);
 
     await tester.tap(find.text('Dune'));
@@ -222,23 +380,49 @@ void main() {
     expect(find.text('Never lent out.'), findsOneWidget);
   });
 
-  testWidgets('the language switcher re-renders the whole app in Spanish', (tester) async {
-    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+  testWidgets('the language switcher re-renders the whole app in Spanish', (
+    tester,
+  ) async {
+    final container = await _boot(
+      tester,
+      signedIn: true,
+      server: _FakeServer(),
+    );
     await _pumpApp(tester, container);
 
     await container.read(languageProvider.notifier).set('es-419');
     await tester.pumpAndSettle();
 
-    // The bottom bar, the app bar and the book tiles all read from the shared
-    // catalogue, so one switch relabels the whole tree.
-    expect(find.text('Descubrir'), findsOneWidget);
-    expect(find.text('Ubicaciones'), findsOneWidget);
-    expect(find.text('Catálogo'), findsWidgets);
+    // The app bars and the book tiles all read from the shared catalogue, so
+    // one switch relabels the whole tree. The bottom bar is icon-only.
+    expect(find.widgetWithText(AppBar, 'Catálogo'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.travel_explore_outlined),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Descubrir'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.warehouse_outlined),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Ubicaciones'), findsOneWidget);
     expect(find.text('Sign in to your library'), findsNothing);
   });
 
   testWidgets('the settings screen re-themes the whole app', (tester) async {
-    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+    final container = await _boot(
+      tester,
+      signedIn: true,
+      server: _FakeServer(),
+    );
     await _pumpApp(tester, container);
 
     ThemeData appTheme() =>
@@ -254,12 +438,20 @@ void main() {
 
     // The theme picker sits near the bottom of the settings list.
     final themeHeader = find.text('THEME');
-    await tester.dragUntilVisible(themeHeader, find.byType(ListView), const Offset(0, -150));
+    await tester.dragUntilVisible(
+      themeHeader,
+      find.byType(ListView),
+      const Offset(0, -150),
+    );
     await tester.pumpAndSettle();
     expect(themeHeader, findsOneWidget);
 
     final pink = find.text('Pink');
-    await tester.dragUntilVisible(pink, find.byType(ListView), const Offset(0, -150));
+    await tester.dragUntilVisible(
+      pink,
+      find.byType(ListView),
+      const Offset(0, -150),
+    );
     await tester.pumpAndSettle();
     await tester.tap(pink);
     await tester.pumpAndSettle();
@@ -273,7 +465,11 @@ void main() {
   });
 
   testWidgets('a yellow theme draws dark text on its buttons', (tester) async {
-    final container = await _boot(tester, signedIn: true, server: _FakeServer());
+    final container = await _boot(
+      tester,
+      signedIn: true,
+      server: _FakeServer(),
+    );
     await _pumpApp(tester, container);
 
     await container.read(colorThemeProvider.notifier).set('yellow');
@@ -282,6 +478,9 @@ void main() {
     final theme = tester.widget<MaterialApp>(find.byType(MaterialApp)).theme!;
     expect(theme.colorScheme.primary, themeBySlug('yellow').accent);
     expect(theme.colorScheme.onPrimary, themeBySlug('yellow').ink);
-    expect(theme.filledButtonTheme.style!.foregroundColor!.resolve({}), themeBySlug('yellow').ink);
+    expect(
+      theme.filledButtonTheme.style!.foregroundColor!.resolve({}),
+      themeBySlug('yellow').ink,
+    );
   });
 }

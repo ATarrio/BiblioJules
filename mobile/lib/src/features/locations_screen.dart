@@ -223,11 +223,30 @@ class _LocationDialogState extends ConsumerState<_LocationDialog> {
     super.dispose();
   }
 
-  /// A location may not be filed inside itself.
-  List<Location> get _parentOptions => [
-    for (final item in widget.all)
-      if (item.id != widget.location?.id) item,
-  ];
+  /// A location may not be filed inside itself *or any of its descendants*:
+  /// that would detach the subtree from the tree and create a cycle.
+  List<Location> get _parentOptions {
+    final blocked = <int>{};
+    final current = widget.location?.id;
+    if (current != null) {
+      blocked.add(current);
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (final item in widget.all) {
+          if (item.parentId != null &&
+              blocked.contains(item.parentId) &&
+              blocked.add(item.id)) {
+            changed = true;
+          }
+        }
+      }
+    }
+    return [
+      for (final item in widget.all)
+        if (!blocked.contains(item.id)) item,
+    ];
+  }
 
   Future<void> _save() async {
     final l10n = context.localized;
@@ -261,8 +280,9 @@ class _LocationDialogState extends ConsumerState<_LocationDialog> {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _busy = false);
       showSnack(context, error.message, isError: true);
+    } finally {
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 

@@ -147,9 +147,15 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                         icon: query.hasFilters ? Icons.filter_alt_off_outlined : Icons.menu_book_outlined,
                         action: query.hasFilters
                             ? TextButton(
-                                onPressed: () => ref
-                                    .read(catalogQueryProvider.notifier)
-                                    .reset(),
+                                onPressed: () {
+                                  // The empty state is about the whole query,
+                                  // search text included: clearing only the
+                                  // chips would leave the user stuck.
+                                  _search.clear();
+                                  ref
+                                      .read(catalogQueryProvider.notifier)
+                                      .reset();
+                                },
                                 child: Text(l10n.tr('Clear filters')),
                               )
                             : null,

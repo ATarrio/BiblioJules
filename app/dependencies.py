@@ -76,8 +76,17 @@ def _resolve(db: Session, request: Request) -> tuple[User | None, object | None]
         # A bad bearer token must not silently fall back to the cookie.
         return None, None
 
-    # The JSON API is bearer-only; the session cookie belongs to the HTML app.
-    if request.url.path.startswith("/api/"):
+    # The JSON API is bearer-only for the general catalogue endpoints;
+    # the personal (local-only) endpoints additionally accept the browser
+    # session cookie because the web UI reads/writes them with plain fetch().
+    personal_paths = (
+        "/api/personal-stats",
+        "/api/goals",
+        "/api/wantlist",
+    )
+    if request.url.path.startswith("/api/") and not any(
+        request.url.path == p or request.url.path.startswith(p + "/") for p in personal_paths
+    ):
         return None, None
 
     raw = request.cookies.get(SESSION_COOKIE)
@@ -109,8 +118,13 @@ async def _enforce_csrf(request: Request) -> None:
     if request.method in SAFE_METHODS:
         return
     # Bearer-token API calls carry no cookies, so CSRF is not a concern there.
+    # A browser session that happens to call /api/ *is* cookie-authenticated,
+    # though, and those endpoints can change personal data (goals, wantlist),
+    # so they get the same check as the HTML routes.
     if request.url.path.startswith("/api/"):
-        return
+        token = getattr(request.state, "token", None)
+        if getattr(token, "kind", None) != KIND_WEB:
+            return
 
     expected = getattr(request.state, "csrf", None)
     if not expected:

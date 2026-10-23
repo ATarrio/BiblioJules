@@ -33,7 +33,13 @@ class DiscoverView(QWidget):
     def __init__(self, on_change: Callable[[], None], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.on_change = on_change
+        self._seq = 0
+        self._deleted = False
+        self.destroyed.connect(self._mark_deleted)
         self._build_ui()
+
+    def _mark_deleted(self, *_: object) -> None:
+        self._deleted = True
 
     def _build_ui(self) -> None:
         self.query = QLineEdit()
@@ -116,9 +122,18 @@ class DiscoverView(QWidget):
         self.message.setText(_("Searching for “%s”…") % query)
         self._rows = []
         self.table.setRowCount(0)
-        run_async(search_books, self._on_results, self._on_error, query)
+        self._seq += 1
+        seq = self._seq
+        run_async(
+            search_books,
+            lambda results: self._on_results(results, seq),
+            lambda message: self._on_error(message, seq),
+            query,
+        )
 
-    def _on_results(self, results: list[dict]) -> None:
+    def _on_results(self, results: list[dict], seq: int) -> None:
+        if self._deleted or seq != self._seq:
+            return
         self.search_btn.setEnabled(True)
         if not results:
             self._rows = []
@@ -149,7 +164,9 @@ class DiscoverView(QWidget):
                     item.setData(_RESULT, result)
                 self.table.setItem(row_index, column, item)
 
-    def _on_error(self, message: str) -> None:
+    def _on_error(self, message: str, seq: int) -> None:
+        if self._deleted or seq != self._seq:
+            return
         self.search_btn.setEnabled(True)
         self.message.setText(_("Search failed: %s") % message)
 

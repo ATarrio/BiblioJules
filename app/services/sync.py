@@ -36,7 +36,9 @@ import json
 import os
 import socket
 import sqlite3
+import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -220,7 +222,14 @@ def _stamp(value) -> float:
         return 0.0
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
+    stamp = parsed.timestamp()
+    # A device whose clock is set years ahead would otherwise win every future
+    # conflict forever. Treat anything beyond a small tolerance as "now" so the
+    # next edit with a sane clock can still win.
+    now = time.time()
+    if stamp > now + 300:
+        return now
+    return stamp
 
 
 class SyncState:
@@ -363,11 +372,55 @@ def resolve_target(value: str | Path | None = None, *, db_path: Path | None = No
 # --------------------------------------------------------------------------- #
 # Snapshot files
 # --------------------------------------------------------------------------- #
+@contextmanager
+def _sync_lock(db_path: Path, timeout: float = 15.0):
+    """Serialize syncs that share one local database.
+
+    Two processes on the same machine (the web app and the desktop app, for
+    example) can otherwise read the same snapshot and replace it in turn. A
+    lock file next to the database is enough; cross-device races are handled by
+    the compare-and-swap in :func:`export_snapshot`.
+    """
+    lock_path = db_path.with_name(db_path.name + ".synclock")
+    deadline = time.monotonic() + timeout
+    handle: int | None = None
+    while handle is None:
+        try:
+            handle = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(handle, str(os.getpid()).encode("ascii", "ignore"))
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except OSError:
+                age = 0.0
+            if age > 300:
+                # A crashed process left its lock behind; break it.
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise SyncError(
+                    "Another sync is already running. Wait for it to finish and try again."
+                )
+            time.sleep(0.1)
+    try:
+        yield
+    finally:
+        if handle is not None:
+            os.close(handle)
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+
+
 def _open_live(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(str(path), isolation_level=None)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA busy_timeout = 5000")
+    connection.execute("PRAGMA busy_timeout = 15000")
     return connection
 
 
@@ -390,7 +443,7 @@ def _vacuum_into(source: Path, target: Path) -> None:
     quoted = str(target).replace("'", "''")
     connection = sqlite3.connect(str(source))
     try:
-        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA busy_timeout = 15000")
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         connection.execute(f"VACUUM INTO '{quoted}'")
     finally:
@@ -421,7 +474,9 @@ def export_snapshot(
     snapshot_id = uuid.uuid4().hex
     exported_at = stamp_now()
 
-    tmp = target.with_name(target.name + ".tmp")
+    # A unique temporary name keeps two processes from writing the same file
+    # while they are preparing their snapshots.
+    tmp = target.with_name(f"{target.name}.{uuid.uuid4().hex}.tmp")
     _vacuum_into(db_path, tmp)
     try:
         connection = sqlite3.connect(str(tmp))
@@ -457,6 +512,16 @@ def export_snapshot(
                 raise SyncError("The snapshot copy did not pass its integrity check.")
         finally:
             connection.close()
+        # Compare-and-swap: refuse to replace a snapshot that moved on while we
+        # were merging. Without this, two devices that started from the same
+        # generation silently overwrite each other and the last writer wins.
+        if based_on and target.exists():
+            current = _read_meta_quiet(target)
+            if current is not None and current.snapshot_id != based_on:
+                raise SyncError(
+                    "The shared library changed on another device while syncing. "
+                    "Please try again."
+                )
         os.replace(tmp, target)
     finally:
         if tmp.exists():
@@ -723,6 +788,31 @@ def _sort_locations(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda row: (_location_depth(rows_by_id, row), row["id"]))
 
 
+def _remember_remote_tombstone(
+    connection: sqlite3.Connection, table: str, tombstone: dict
+) -> None:
+    """Keep a remote deletion locally so it keeps travelling to other devices.
+
+    Applying a deletion used to be a one-way operation: the row disappeared but
+    no local tombstone was written, so the next export dropped the deletion
+    marker and an offline device could push the row back.
+    """
+    existing = connection.execute(
+        "SELECT deleted_at FROM sync_tombstones WHERE table_name = ? AND sync_id = ?",
+        (table, tombstone["sync_id"]),
+    ).fetchone()
+    if existing is None:
+        connection.execute(
+            "INSERT INTO sync_tombstones (table_name, sync_id, deleted_at) VALUES (?, ?, ?)",
+            (table, tombstone["sync_id"], tombstone["deleted_at"]),
+        )
+    elif _stamp(tombstone["deleted_at"]) > _stamp(existing["deleted_at"]):
+        connection.execute(
+            "UPDATE sync_tombstones SET deleted_at = ? WHERE table_name = ? AND sync_id = ?",
+            (tombstone["deleted_at"], table, tombstone["sync_id"]),
+        )
+
+
 def _apply_remote_tombstones(
     connection: sqlite3.Connection, remote: sqlite3.Connection, summary: MergeSummary
 ) -> None:
@@ -748,6 +838,7 @@ def _apply_remote_tombstones(
             (fallback["id"] if fallback else None, local["id"]),
         )
         connection.execute("DELETE FROM statuses WHERE id = ?", (local["id"],))
+        _remember_remote_tombstone(connection, "statuses", tombstone)
         summary.bump(summary.deleted, "statuses")
 
     for tombstone in by_table.get("books", []):
@@ -757,6 +848,7 @@ def _apply_remote_tombstones(
         if local is None or _stamp(tombstone["deleted_at"]) < _stamp(local["updated_at"]):
             continue
         connection.execute("DELETE FROM books WHERE id = ?", (local["id"],))
+        _remember_remote_tombstone(connection, "books", tombstone)
         summary.bump(summary.deleted, "books")
 
     locations = by_table.get("locations", [])
@@ -780,6 +872,7 @@ def _apply_remote_tombstones(
                 (local["parent_id"], local["id"]),
             )
             connection.execute("DELETE FROM locations WHERE id = ?", (local["id"],))
+            _remember_remote_tombstone(connection, "locations", tombstone)
             summary.bump(summary.deleted, "locations")
 
 
@@ -986,7 +1079,20 @@ def _merge_books(
         if local is None:
             values["sync_id"] = sync_id
             values["created_at"] = remote_row.get("created_at")
-            new_id = _insert(connection, "books", values)
+            try:
+                new_id = _insert(connection, "books", values)
+            except sqlite3.IntegrityError as exc:
+                # A duplicate ISBN must not abort the whole merge. Import the
+                # book without the ISBN and report the clash instead.
+                if values.get("isbn") and "books.isbn" in str(exc):
+                    summary.conflicts.append(
+                        f"book “{values.get('title')}”: ISBN {values['isbn']} "
+                        "is already used by another book"
+                    )
+                    values["isbn"] = None
+                    new_id = _insert(connection, "books", values)
+                else:
+                    raise
             inserted = dict(values, id=new_id)
             by_sync[sync_id] = inserted
             if inserted.get("isbn"):
@@ -1006,13 +1112,32 @@ def _merge_books(
         by_sync[sync_id] = local
         if _newer(remote_row, local):
             changed = {name: value for name, value in values.items() if value != local.get(name)}
+            if "isbn" in changed and changed["isbn"]:
+                owner = by_isbn.get(changed["isbn"])
+                if owner is not None and owner["id"] != local["id"]:
+                    # The incoming ISBN belongs to a different local book.
+                    # Keep the old ISBN instead of aborting the merge on the
+                    # unique index, and tell the user about the clash.
+                    changed.pop("isbn")
+                    summary.conflicts.append(
+                        f"book “{local.get('title')}”: ISBN {values['isbn']} "
+                        "is already used by another book"
+                    )
             if changed:
+                previous_isbn = local.get("isbn")
                 _update(connection, "books", local["id"], changed)
                 if _conflict(since, remote_row, local):
                     summary.conflicts.append(
                         f"book “{local.get('title')}”: kept the version from {summary.source_device}"
                     )
                 local.update(changed)
+                # Keep the ISBN lookup in step with the row, otherwise a later
+                # remote row carrying the old ISBN matches the wrong book.
+                if "isbn" in changed:
+                    if previous_isbn:
+                        by_isbn.pop(previous_isbn, None)
+                    if changed["isbn"]:
+                        by_isbn[changed["isbn"]] = local
                 summary.bump(summary.updated, "books")
             # The author set travels with the winning book row.
             _replace_authors(connection, local["id"], authors_by_book.get(remote_row["id"], []), author_map)
@@ -1079,6 +1204,39 @@ def _merge_all(
         since,
     )
     _merge_loans(connection, remote, _rows(remote, "loans"), book_map, summary)
+    pruned = _prune_orphans(connection)
+    # A snapshot can carry a name whose only book was deleted on the other
+    # device. Recording it as "added" and then dropping it again would make the
+    # summary lie, so take those rows back out of the tally.
+    for table, removed in pruned.items():
+        for bucket in (summary.added, summary.updated):
+            if bucket.get(table):
+                bucket[table] = max(0, bucket[table] - removed)
+                if not bucket[table]:
+                    del bucket[table]
+
+
+def _prune_orphans(connection: sqlite3.Connection) -> dict[str, int]:
+    """Drop authors/publishers whose last book disappeared in this merge.
+
+    Unlike a user delete this needs no tombstone: an author that comes back in
+    a later snapshot is simply inserted again, and deleting the rows here keeps
+    the dashboard counts and filter lists honest.
+    """
+    removed: dict[str, int] = {}
+    for table, sql in (
+        ("authors", "DELETE FROM authors WHERE id NOT IN (SELECT author_id FROM book_authors)"),
+        (
+            "publishers",
+            "DELETE FROM publishers WHERE id NOT IN "
+            "(SELECT publisher_id FROM books WHERE publisher_id IS NOT NULL)",
+        ),
+    ):
+        before = connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        connection.execute(sql)
+        after = connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        removed[table] = int(before - after)
+    return removed
 
 
 def merge_snapshot(db_path: Path, snapshot_path: Path, *, since: str | None = None) -> MergeSummary:
@@ -1088,7 +1246,15 @@ def merge_snapshot(db_path: Path, snapshot_path: Path, *, since: str | None = No
     live = _open_live(db_path)
     remote = _open_read_only(snapshot_path)
     try:
-        live.execute("BEGIN IMMEDIATE")
+        try:
+            live.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+                raise SyncError(
+                    "The library is busy (another app is saving changes). "
+                    "Wait a moment and sync again."
+                ) from exc
+            raise
         try:
             _merge_all(live, remote, summary, since)
             problems = live.execute("PRAGMA foreign_key_check").fetchall()
@@ -1098,7 +1264,10 @@ def merge_snapshot(db_path: Path, snapshot_path: Path, *, since: str | None = No
                 )
             live.execute("COMMIT")
         except BaseException:
-            live.execute("ROLLBACK")
+            try:
+                live.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
             raise
     finally:
         remote.close()
@@ -1165,7 +1334,7 @@ def _combine(summary: MergeSummary | None, part: MergeSummary) -> MergeSummary:
     return summary
 
 
-def sync_now(
+def _sync_now_impl(
     target: str | Path | None = None,
     *,
     db_path: Path | None = None,
@@ -1212,6 +1381,16 @@ def sync_now(
             # The folder settled: no need to go around again.
             break
 
+    # If the folder moved on after our last merge, we never saw the newest
+    # snapshot. Publishing now would overwrite changes we did not merge, so
+    # stop and ask the user to retry instead.
+    try:
+        latest_meta = read_snapshot_meta(path)
+    except SyncError:
+        latest_meta = None
+    if latest_meta is not None and latest_meta.snapshot_id != state.last_snapshot_id:
+        raise SyncError("The shared library kept changing while syncing. Please try again.")
+
     # Only write the file again when the snapshot lacks something we have;
     # otherwise two devices would bounce an unchanged snapshot back and forth.
     pushed = force or needs_push(db_path, path)
@@ -1227,6 +1406,29 @@ def sync_now(
     state.last_result = SyncResult(meta, summary, pushed, merged_snapshot).as_dict()
     save_state(db_path, state)
     return SyncResult(snapshot=meta, merge=summary, pushed=pushed, merged_snapshot=merged_snapshot)
+
+
+def sync_now(
+    target: str | Path | None = None,
+    *,
+    db_path: Path | None = None,
+    device_name: str | None = None,
+    force: bool = False,
+) -> SyncResult:
+    """Merge the shared snapshot into this library, then publish the result.
+
+    The local lock keeps the web app and the desktop app from merging the same
+    snapshot at the same time; the compare-and-swap in ``export_snapshot``
+    handles the same race between devices.
+    """
+    resolved = Path(db_path) if db_path is not None else database_path()
+    with _sync_lock(resolved):
+        return _sync_now_impl(
+            target,
+            db_path=resolved,
+            device_name=device_name,
+            force=force,
+        )
 
 
 def sync_status(target: str | Path | None = None, *, db_path: Path | None = None) -> dict:

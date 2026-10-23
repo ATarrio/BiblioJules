@@ -35,7 +35,7 @@ from ..dependencies import (
 from ..models import User
 from ..models.token import KIND_API, KIND_WEB
 from ..schemas import LoginIn
-from ..services import auth
+from ..services import auth, rate_limit
 from ..services.serializers import user_to_dict
 from ..templating import templates
 
@@ -164,8 +164,21 @@ async def login(request: Request, db: Session = Depends(get_db)):
             db, request, username, next_url, _("Your session expired. Please try again.")
         )
 
+    keys = [f"ip:{rate_limit.client_key(request)}", f"user:{username.casefold()}"]
+    wait = rate_limit.retry_after(keys)
+    if wait:
+        return _login_error(
+            db,
+            request,
+            username,
+            next_url,
+            _("Too many sign-in attempts. Try again in %(seconds)s seconds.")
+            % {"seconds": wait},
+        )
+
     user = auth.authenticate(db, username, password)
     if user is None:
+        rate_limit.record_failure(keys)
         return _login_error(
             db,
             request,
@@ -173,6 +186,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
             next_url,
             _("Incorrect username or password.") if auth.count_users(db) else None,
         )
+    rate_limit.reset(keys)
 
     raw, _token = auth.create_token(
         db, user, kind=KIND_WEB, label=(request.headers.get("user-agent") or "")[:120]
@@ -227,11 +241,24 @@ def logout(request: Request, db: Session = Depends(get_db), user: User = Depends
 # --------------------------------------------------------------------------- #
 @router.post("/api/auth/login")
 def api_login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
+    keys = [f"ip:{rate_limit.client_key(request)}", f"user:{payload.username.casefold()}"]
+    wait = rate_limit.retry_after(keys)
+    if wait:
+        return JSONResponse(
+            {
+                "detail": _("Too many sign-in attempts. Try again in %(seconds)s seconds.")
+                % {"seconds": wait}
+            },
+            status_code=429,
+            headers={"Retry-After": str(wait)},
+        )
     user = auth.authenticate(db, payload.username, payload.password)
     if user is None:
+        rate_limit.record_failure(keys)
         return JSONResponse(
             {"detail": "Incorrect username or password."}, status_code=401
         )
+    rate_limit.reset(keys)
     raw, token = auth.create_token(
         db,
         user,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -34,7 +34,7 @@ from ..book_fields import COVER_TYPES, READ_STATUSES
 from ..i18n import _
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from .cover import CoverImage
-from .repo import get_repo
+from .repo import RepoError, get_repo
 from .switch import Switch
 from .util import (
     cover_type_label,
@@ -61,6 +61,13 @@ def _style_primary(box: QDialogButtonBox, role: QDialogButtonBox.StandardButton)
         button.setProperty("variant", "primary")
 
 
+def _report_load_error(widget: QWidget, exc: Exception) -> None:
+    """Show a data-source failure once the dialog is on screen."""
+    QTimer.singleShot(
+        0, lambda: QMessageBox.warning(widget, _("Could not load"), str(exc))
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Book add / edit
 # --------------------------------------------------------------------------- #
@@ -79,14 +86,24 @@ class BookDialog(QDialog):
         self.on_bulk_save = on_bulk_save
         self.keep_open: QCheckBox | None = None
         self._source: str | None = None
+        self._lookup_seq = 0
         self.setWindowTitle(_("Add book") if book_id is None else _("Edit book"))
         self.setMinimumWidth(620)
         self._build_ui()
-        self._load_choices()
+        load_error: str | None = None
+        try:
+            self._load_choices()
+        except RepoError as exc:
+            load_error = str(exc)
         if book_id is None:
             self._source = "manual"
         else:
-            self._load_book()
+            try:
+                self._load_book()
+            except RepoError as exc:
+                load_error = load_error or str(exc)
+        if load_error is not None:
+            _report_load_error(self, RepoError(load_error))
 
     # -- construction ------------------------------------------------------- #
     def _build_ui(self) -> None:
@@ -283,9 +300,18 @@ class BookDialog(QDialog):
         else:
             self.message.setText(_("Looking up…"))
         self.lookup_btn.setEnabled(False)
-        run_async(lookup_isbn, self._on_lookup_done, self._on_lookup_error, raw)
+        self._lookup_seq += 1
+        seq = self._lookup_seq
+        run_async(
+            lookup_isbn,
+            lambda data: self._on_lookup_done(data, seq),
+            lambda message: self._on_lookup_error(message, seq),
+            raw,
+        )
 
-    def _on_lookup_done(self, data: dict | None) -> None:
+    def _on_lookup_done(self, data: dict | None, seq: int) -> None:
+        if not self.isVisible() or seq != self._lookup_seq:
+            return  # closed, or a newer lookup is in flight
         self.lookup_btn.setEnabled(True)
         if not data:
             self.message.setText(_("No catalogue entry found for that ISBN."))
@@ -315,7 +341,9 @@ class BookDialog(QDialog):
         if data.get("source"):
             self._source = data["source"]
 
-    def _on_lookup_error(self, message: str) -> None:
+    def _on_lookup_error(self, message: str, seq: int) -> None:
+        if not self.isVisible() or seq != self._lookup_seq:
+            return
         self.lookup_btn.setEnabled(True)
         self.message.setText(_("Lookup failed: %s") % message)
 
@@ -358,9 +386,11 @@ class BookDialog(QDialog):
 
     def _on_save(self) -> None:
         if not self.title.text().strip():
-            self.message.setText(
-                _("A title is required (it will be saved as 'Untitled' if blank).")
-            )
+            # Do not accept (and therefore do not save an "Untitled" row) when
+            # the user presses Enter on an empty title.
+            self.message.setText(_("A title is required."))
+            self.title.setFocus()
+            return
         if (
             self.book_id is None
             and self.keep_open is not None
@@ -420,7 +450,10 @@ class BookDetailsDialog(QDialog):
         self.setWindowTitle(_("Book details"))
         self.setMinimumWidth(640)
         self._build_ui()
-        self._load()
+        try:
+            self._load()
+        except RepoError as exc:
+            _report_load_error(self, exc)
 
     def _build_ui(self) -> None:
         # --- header: cover on the left, title block on the right ---------- #
@@ -719,7 +752,10 @@ class LocationDialog(QDialog):
         self.setMinimumWidth(420)
         self._build_ui(preselect_parent)
         if location_id is not None:
-            self._load()
+            try:
+                self._load()
+            except RepoError as exc:
+                _report_load_error(self, exc)
 
     def _build_ui(self, preselect_parent: int | None) -> None:
         form = QFormLayout()
@@ -734,7 +770,11 @@ class LocationDialog(QDialog):
         form.addRow(_("Kind"), self.kind)
         form.addRow(_("Description"), self.description)
 
-        choices = location_choices(get_repo().list_locations())
+        try:
+            choices = location_choices(get_repo().list_locations())
+        except RepoError as exc:
+            choices = []
+            _report_load_error(self, exc)
         fill_combo(self.parent, choices, none_label=_("— top level —"), current=preselect_parent)
 
         buttons = QDialogButtonBox(
@@ -788,7 +828,10 @@ class StatusDialog(QDialog):
         self.setMinimumWidth(420)
         self._build_ui()
         if status_id is not None:
-            self._load()
+            try:
+                self._load()
+            except RepoError as exc:
+                _report_load_error(self, exc)
 
     def _build_ui(self) -> None:
         form = QFormLayout()

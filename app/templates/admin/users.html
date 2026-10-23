@@ -13,28 +13,28 @@
   </div>
 {% endif %}
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-[360px,1fr]">
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
   <div class="rounded-2xl border border-slate-200 bg-card p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-6 lg:self-start">
     <h2 class="mb-3 text-base font-semibold text-slate-900 dark:text-white">{{ _('Add a user') }}</h2>
     <form hx-post="/admin/users" hx-target="body" class="space-y-3">
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Username') }} *</label>
-        <input name="username" required autocomplete="off"
+        <input name="username" aria-label="{{ _('Username') }}" required autocomplete="off"
                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Display name') }}</label>
-        <input name="display_name" autocomplete="off"
+        <input name="display_name" aria-label="{{ _('Display name') }}" autocomplete="off"
                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Password') }} *</label>
-        <input name="password" type="password" required autocomplete="new-password"
+        <input name="password" aria-label="{{ _('Password') }}" type="password" required autocomplete="new-password"
                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
       </div>
       <div>
         <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Role') }}</label>
-        <select name="role" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+        <select name="role" aria-label="{{ _('Role') }}" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
           <option value="member">{{ _('Member') }}</option>
           <option value="admin">{{ _('Administrator') }}</option>
         </select>

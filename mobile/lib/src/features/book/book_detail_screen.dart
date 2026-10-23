@@ -33,6 +33,11 @@ class BookDetailScreen extends ConsumerWidget {
         actions: [
           if (current != null) ...[
             IconButton(
+              tooltip: l10n.tr('Upload cover'),
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              onPressed: () => _uploadCover(context, ref, current),
+            ),
+            IconButton(
               tooltip: l10n.tr('Edit'),
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => context.pushNamed(
@@ -43,7 +48,9 @@ class BookDetailScreen extends ConsumerWidget {
             IconButton(
               tooltip: current.isLoaned ? l10n.tr('Return') : l10n.tr('Lend'),
               icon: Icon(
-                current.isLoaned ? Icons.assignment_return_outlined : Icons.person_add_alt,
+                current.isLoaned
+                    ? Icons.assignment_return_outlined
+                    : Icons.person_add_alt,
               ),
               onPressed: () => context.pushNamed(
                 'book-loan',
@@ -53,6 +60,11 @@ class BookDetailScreen extends ConsumerWidget {
           ],
         ],
         extraItems: [
+          LibraryAppBarItem(
+            'want',
+            l10n.tr('Add to want-to-read'),
+            Icons.bookmark_add_outlined,
+          ),
           LibraryAppBarItem('copy-isbn', l10n.tr('Copy ISBN'), Icons.numbers),
           LibraryAppBarItem(
             'delete',
@@ -62,10 +74,33 @@ class BookDetailScreen extends ConsumerWidget {
           ),
         ],
         onExtraSelected: (value) async {
+          if (value == 'want' && current != null) {
+            final added = await runGuarded<bool>(context, ref, () async {
+              await ref
+                  .read(repoProvider)
+                  .addWant(
+                    WantEntry(
+                      id: 'want-${current.id}',
+                      isbn: current.isbn,
+                      title: current.title,
+                      authors: current.authors.join(', '),
+                      publisher: current.publisher,
+                      addedAt: DateTime.now().toUtc().toIso8601String(),
+                    ),
+                  );
+              return true;
+            }, successMessage: l10n.tr('Added to the want-to-read list.'));
+            if (added == true) ref.invalidate(wantListProvider);
+            return;
+          }
           if (value == 'copy-isbn') {
             final isbn = current?.isbn;
             if (isbn == null || isbn.isEmpty) {
-              showSnack(context, l10n.tr('This book has no ISBN.'), isError: true);
+              showSnack(
+                context,
+                l10n.tr('This book has no ISBN.'),
+                isError: true,
+              );
               return;
             }
             await Clipboard.setData(ClipboardData(text: isbn));
@@ -105,6 +140,56 @@ class BookDetailScreen extends ConsumerWidget {
   }
 }
 
+Future<void> _uploadCover(
+  BuildContext context,
+  WidgetRef ref,
+  Book book,
+) async {
+  final l10n = context.localized;
+  try {
+    final file = await ref
+        .read(deviceFilePickerProvider)
+        .pick(name: 'cover', mimeType: 'image/*');
+    if (file == null) return;
+    try {
+      final length = await file.length();
+      if (!context.mounted) return;
+      if (length > 10 * 1024 * 1024) {
+        showSnack(
+          context,
+          l10n.tr('That image is too large (the limit is 10 MB).'),
+          isError: true,
+        );
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      if (!context.mounted) return;
+      final updated = await runGuarded<Book>(
+        context,
+        ref,
+        () => ref
+            .read(repoProvider)
+            .uploadCover(
+              book.id,
+              filename: file.uri.pathSegments.last,
+              bytes: bytes,
+            ),
+        successMessage: l10n.tr('Cover updated.'),
+      );
+      if (updated != null) {
+        invalidateBooks(ref);
+        ref.invalidate(bookProvider(book.id));
+      }
+    } finally {
+      if (await file.exists()) await file.delete();
+    }
+  } on Object catch (error) {
+    if (context.mounted) {
+      showSnack(context, describeError(context, error), isError: true);
+    }
+  }
+}
+
 class _BookBody extends ConsumerWidget {
   const _BookBody({required this.book});
 
@@ -119,7 +204,9 @@ class _BookBody extends ConsumerWidget {
     final stars = scoreStars(book.score);
     final saga = book.saga == null
         ? null
-        : (book.sagaNumber == null ? book.saga! : '${book.saga!} #${book.sagaNumber}');
+        : (book.sagaNumber == null
+              ? book.saga!
+              : '${book.saga!} #${book.sagaNumber}');
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -127,7 +214,12 @@ class _BookBody extends ConsumerWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            BookCover(url: book.coverUrl, title: book.title, width: 104, height: 156),
+            BookCover(
+              url: book.coverUrl,
+              title: book.title,
+              width: 104,
+              height: 156,
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -135,17 +227,15 @@ class _BookBody extends ConsumerWidget {
                 children: [
                   Text(
                     book.title,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   if (book.subtitle != null && book.subtitle!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       book.subtitle!,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: kSlate400),
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: kSlate400),
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -186,9 +276,13 @@ class _BookBody extends ConsumerWidget {
                   pathParameters: {'id': '${book.id}'},
                 ),
                 icon: Icon(
-                  book.isLoaned ? Icons.assignment_return_outlined : Icons.person_add_alt,
+                  book.isLoaned
+                      ? Icons.assignment_return_outlined
+                      : Icons.person_add_alt,
                 ),
-                label: Text(book.isLoaned ? l10n.tr('Return') : l10n.tr('Lend')),
+                label: Text(
+                  book.isLoaned ? l10n.tr('Return') : l10n.tr('Lend'),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -212,8 +306,10 @@ class _BookBody extends ConsumerWidget {
         _Section(
           title: l10n.tr('Details'),
           rows: [
-            if (readStatus.isNotEmpty) (l10n.tr('Read status'), l10n.tr(readStatus)),
-            if (coverType.isNotEmpty) (l10n.tr('Cover type'), l10n.tr(coverType)),
+            if (readStatus.isNotEmpty)
+              (l10n.tr('Read status'), l10n.tr(readStatus)),
+            if (coverType.isNotEmpty)
+              (l10n.tr('Cover type'), l10n.tr(coverType)),
             if (saga != null) (l10n.tr('Saga'), saga),
             if (book.publishedDate != null && book.publishedDate!.isNotEmpty)
               (l10n.tr('Published'), book.publishedDate!),
@@ -222,15 +318,20 @@ class _BookBody extends ConsumerWidget {
             if (book.pageCount != null) (l10n.tr('Pages'), '${book.pageCount}'),
             if (book.language != null && book.language!.isNotEmpty)
               (l10n.tr('Language'), book.language!),
-            if (book.location != null) (l10n.tr('Location'), book.location!.display),
-            if (book.isbn != null && book.isbn!.isNotEmpty) (l10n.tr('ISBN'), book.isbn!),
+            if (book.location != null)
+              (l10n.tr('Location'), book.location!.display),
+            if (book.isbn != null && book.isbn!.isNotEmpty)
+              (l10n.tr('ISBN'), book.isbn!),
           ],
         ),
         if (book.description != null && book.description!.isNotEmpty) ...[
           const SizedBox(height: 20),
           _SectionTitle(l10n.tr('Description')),
           const SizedBox(height: 8),
-          Text(book.description!, style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            book.description!,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ],
         if (book.notes != null && book.notes!.isNotEmpty) ...[
           const SizedBox(height: 20),
@@ -309,12 +410,14 @@ class _LoanCard extends StatelessWidget {
               if (loan.dueAt != null)
                 '${l10n.tr('Due')} ${formatDate(loan.dueAt, l10n.language)}',
             ].join(' · '),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSlate300),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: kSlate300),
           ),
           if (loan.borrowerContact != null && loan.borrowerContact!.isNotEmpty)
             Text(
               loan.borrowerContact!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSlate400),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: kSlate400),
             ),
         ],
       ),
@@ -349,7 +452,8 @@ class _LoanHistoryTile extends StatelessWidget {
           ),
           Text(
             loan.isActive ? l10n.tr('On loan') : l10n.tr('Returned'),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: kSlate500),
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: kSlate500),
           ),
         ],
       ),
@@ -395,7 +499,10 @@ class _Section extends StatelessWidget {
               for (var index = 0; index < rows.length; index++) ...[
                 if (index > 0) const Divider(height: 1),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -403,9 +510,8 @@ class _Section extends StatelessWidget {
                         width: 110,
                         child: Text(
                           rows[index].$1,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(color: kSlate400),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: kSlate400),
                         ),
                       ),
                       Expanded(
@@ -451,7 +557,11 @@ class _Pill extends StatelessWidget {
           ],
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

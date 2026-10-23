@@ -22,7 +22,7 @@ from .dependencies import (
     require_user,
 )
 from .i18n import LanguageMiddleware, _
-from .routers import admin, api, auth, books, health, locations, lookup, pages, statuses
+from .routers import admin, api, auth, books, health, import_route as import_router, locations, lookup, pages, statuses
 from .services.library import prune_orphans, sync_published_years
 from .services.seed import seed_defaults
 from .templating import templates
@@ -92,6 +92,14 @@ def create_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # Uploaded covers live next to the database (local-only, never synced) and
+    # are served from their own path so they stay out of the shared snapshot.
+    from .config import DATA_DIR
+
+    covers_dir = DATA_DIR / "covers"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/covers", StaticFiles(directory=str(covers_dir)), name="covers")
+
     # Browsers ask for /favicon.ico even when base.html points at an icon, so
     # serve the generated file instead of a 404. Public like /static.
     @app.get("/favicon.ico", include_in_schema=False)
@@ -110,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(locations.router, dependencies=[Depends(require_user)])
     app.include_router(statuses.router, dependencies=[Depends(require_user)])
     app.include_router(pages.router, dependencies=[Depends(require_user)])
+    app.include_router(import_router.router, dependencies=[Depends(require_user)])
     app.include_router(admin.router, dependencies=[Depends(require_admin)])
 
     @app.exception_handler(AuthenticationRequired)
@@ -130,12 +139,27 @@ def create_app() -> FastAPI:
         detail = exc.detail or _("You do not have permission to do that.")
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": detail}, status_code=403)
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(
+                request,
+                "_fragment_error.html",
+                {"message": detail},
+                status_code=403,
+            )
         return templates.TemplateResponse(
             request, "403.html", {"message": detail}, status_code=403
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def not_found(request: Request, exc: StarletteHTTPException):
+        # HTMX swaps an HTML fragment, never a raw JSON error object.
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(
+                request,
+                "_fragment_error.html",
+                {"message": exc.detail or _("Something went wrong.")},
+                status_code=exc.status_code,
+            )
         # Return a friendly HTML page for browser navigation.
         if exc.status_code == 404 and "text/html" in request.headers.get("accept", ""):
             return templates.TemplateResponse(

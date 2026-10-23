@@ -20,8 +20,10 @@ document.addEventListener('alpine:init', () => {
     modalOpen: false,
     modalTitle: i18n.defaultModalTitle || 'Add a book',
     error: null,
+    _returnFocus: null,
     open(title) {
       if (title) this.modalTitle = title;
+      if (!this.modalOpen) this._returnFocus = document.activeElement;
       this.modalOpen = true;
       document.body.classList.add('overflow-hidden');
       // Give the swapped-in form focus (prefer an explicit marker, e.g. the ISBN
@@ -29,7 +31,9 @@ document.addEventListener('alpine:init', () => {
       requestAnimationFrame(() => {
         const el =
           document.querySelector('#modal-body [data-modal-autofocus]') ||
-          document.querySelector('#modal-body input:not([type=hidden]):not([disabled])');
+          document.querySelector('#modal-body input:not([type=hidden]):not([disabled])') ||
+          document.querySelector('#modal-body textarea:not([disabled])') ||
+          document.querySelector('#modal-body button:not([disabled])');
         if (el) el.focus();
       });
     },
@@ -40,6 +44,12 @@ document.addEventListener('alpine:init', () => {
       if (body) {
         const loading = (window.BIBLIO_I18N && window.BIBLIO_I18N.loading) || 'Loading…';
         body.innerHTML = '<p class="py-10 text-center text-sm text-slate-400">' + loading + '</p>';
+      }
+      // Return focus to whatever opened the dialog, as a keyboard user expects.
+      const previous = this._returnFocus;
+      this._returnFocus = null;
+      if (previous && typeof previous.focus === 'function') {
+        requestAnimationFrame(() => previous.focus());
       }
       // If books were added while the form stayed open, the page behind is
       // stale — reload once the modal is dismissed.
@@ -62,6 +72,46 @@ document.addEventListener('htmx:configRequest', (event) => {
   const meta = document.querySelector('meta[name="csrf-token"]');
   if (meta && meta.content) {
     event.detail.headers['X-CSRF-Token'] = meta.content;
+  }
+});
+
+// HTMX only swaps 2xx responses by default. The server returns a small HTML
+// error fragment for expected failures, so let it through instead of leaving
+// the target unchanged (or, worse, showing a raw JSON object).
+document.addEventListener('htmx:beforeSwap', (event) => {
+  const xhr = event.detail.xhr;
+  const contentType = xhr.getResponseHeader('content-type') || '';
+  if (xhr.status >= 400 && contentType.includes('text/html')) {
+    event.detail.shouldSwap = true;
+    event.detail.isError = false;
+  }
+});
+
+// Keep keyboard focus inside the modal while it is open.
+document.addEventListener('keydown', (event) => {
+  const ui = window.Alpine && window.Alpine.store('ui');
+  if (!ui || !ui.modalOpen) return;
+  if (event.key === 'Escape') {
+    ui.close();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const modal = document.getElementById('modal');
+  if (!modal) return;
+  const focusable = Array.from(
+    modal.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
   }
 });
 
@@ -100,9 +150,12 @@ document.addEventListener('bookAdded', () => {
   window.__libraryDirty = true;
 });
 
-// Surface server errors as a small toast instead of a silent failure.
+// Surface JSON server errors as a small toast instead of a silent failure. An
+// HTML fragment is already visible in the target, so don't duplicate it.
 document.addEventListener('htmx:responseError', (event) => {
   const xhr = event.detail.xhr;
+  const contentType = xhr.getResponseHeader('content-type') || '';
+  if (contentType.includes('text/html')) return;
   const template = (window.BIBLIO_I18N && window.BIBLIO_I18N.error) || 'Something went wrong (%s).';
   let message = template.replace('%s', xhr.status);
   try {

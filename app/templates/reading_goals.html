@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Reading goals') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{{ _('Reading goals') }}</h1>
+  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Set annual goals and track your progress against them.') }}</p>
+</div>
+
+<div class="max-w-3xl">
+  <div class="rounded-2xl border border-slate-200 bg-card p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <p class="text-sm text-slate-500 dark:text-slate-400">{{ _('The reading goal tracker is stored on this device only, even when your library is shared via sync.') }}</p>
+  </div>
+</div>
+{% endblock %}

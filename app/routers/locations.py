@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from urllib.parse import urlencode
 
 from ..database import get_db
 from ..i18n import _
@@ -25,18 +26,25 @@ async def _form_dict(request: Request) -> dict:
     return dict(form)
 
 
+def _redirect_error(request: Request, message: str) -> Response:
+    return _redirect(request, "/locations?" + urlencode({"error": message}))
+
+
 @router.post("/locations")
 async def create_location(request: Request, db: Session = Depends(get_db)):
     form = await _form_dict(request)
     name = (form.get("name") or "").strip()
     if name:
-        library.create_location(
-            db,
-            name=name,
-            parent_id=form.get("parent_id"),
-            kind=form.get("kind"),
-            description=form.get("description"),
-        )
+        try:
+            library.create_location(
+                db,
+                name=name,
+                parent_id=form.get("parent_id"),
+                kind=form.get("kind"),
+                description=form.get("description"),
+            )
+        except ValueError as exc:
+            return _redirect_error(request, str(exc))
     return _redirect(request, "/locations")
 
 
@@ -56,7 +64,7 @@ async def update_location(location_id: int, request: Request, db: Session = Depe
             description=form.get("description"),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _redirect_error(request, str(exc))
     return _redirect(request, "/locations")
 
 

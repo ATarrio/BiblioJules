@@ -118,9 +118,17 @@ class ApiClient implements LibraryRepo {
     switch (error.type) {
       case DioExceptionType.badResponse:
         final code = response?.statusCode ?? 0;
-        if (code == 401) return throw ApiAuthException(detail ?? 'Your session has expired.');
-        if (code == 403) return throw ApiForbiddenException(detail ?? 'You are not allowed to do that.');
-        if (code == 404) return throw ApiNotFoundException(detail ?? 'Not found.');
+        if (code == 401) {
+          return throw ApiAuthException(detail ?? 'Your session has expired.');
+        }
+        if (code == 403) {
+          return throw ApiForbiddenException(
+            detail ?? 'You are not allowed to do that.',
+          );
+        }
+        if (code == 404) {
+          return throw ApiNotFoundException(detail ?? 'Not found.');
+        }
         if (code == 400 || code == 422) {
           return throw ApiValidationException(
             detail ?? 'The server rejected that data.',
@@ -197,8 +205,26 @@ class ApiClient implements LibraryRepo {
     Object? body,
     Map<String, dynamic>? query,
   }) => _guard(
-    () => _dio.request<dynamic>(path, data: body, queryParameters: query, options: Options(method: method)),
+    () => _dio.request<dynamic>(
+      path,
+      data: body,
+      queryParameters: query,
+      options: Options(method: method),
+    ),
   );
+
+  /// Parse a book and make uploaded-cover URLs absolute.
+  ///
+  /// Uploaded covers are served from ``/covers/<file>`` by the server; a
+  /// relative URL would make ``CachedNetworkImage`` try the local filesystem.
+  Book _bookFromJson(Map<String, dynamic> json) {
+    final data = Map<String, dynamic>.from(json);
+    final cover = data['cover_url'];
+    if (cover is String && cover.startsWith('/') && baseUrl.isNotEmpty) {
+      data['cover_url'] = '$baseUrl$cover';
+    }
+    return Book.fromJson(data);
+  }
 
   // --- authentication ----------------------------------------------------- //
   Future<LoginResult> login({
@@ -209,7 +235,11 @@ class ApiClient implements LibraryRepo {
     final response = await _send(
       'POST',
       '/api/auth/login',
-      body: {'username': username, 'password': password, 'label': label ?? deviceLabel()},
+      body: {
+        'username': username,
+        'password': password,
+        'label': label ?? deviceLabel(),
+      },
     );
     return LoginResult.fromJson(response.data as Map<String, dynamic>);
   }
@@ -217,6 +247,11 @@ class ApiClient implements LibraryRepo {
   Future<User> me() async {
     final response = await _get('/api/auth/me');
     return User.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Check that the server answers, without sending it any credentials.
+  Future<void> ping() async {
+    await _get('/health');
   }
 
   Future<void> logout() async {
@@ -237,39 +272,57 @@ class ApiClient implements LibraryRepo {
     String sort = 'recent',
     String? direction,
   }) async {
-    final response = await _get(
-      '/api/books',
-      query: {
-        if (search != null && search.isNotEmpty) 'search': search,
-        'status': ?statusId,
-        'location': ?locationId,
-        'author': ?authorId,
-        'publisher': ?publisherId,
-        if (loaned != null && loaned.isNotEmpty) 'loaned': loaned,
-        if (saga != null && saga.isNotEmpty) 'saga': saga,
-        if (readStatus != null && readStatus.isNotEmpty) 'read_status': readStatus,
-        'sort': sort,
-        if (direction != null && direction.isNotEmpty) 'dir': direction,
-      },
-    );
-    final data = response.data as Map<String, dynamic>;
-    return (data['items'] as List)
-        .map((item) => Book.fromJson(item as Map<String, dynamic>))
-        .toList();
+    // The API caps a page at 500 rows; walk the pages so a large library is
+    // never silently truncated after the first page.
+    final books = <Book>[];
+    var offset = 0;
+    while (true) {
+      final response = await _get(
+        '/api/books',
+        query: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          'status': ?statusId,
+          'location': ?locationId,
+          'author': ?authorId,
+          'publisher': ?publisherId,
+          if (loaned != null && loaned.isNotEmpty) 'loaned': loaned,
+          if (saga != null && saga.isNotEmpty) 'saga': saga,
+          if (readStatus != null && readStatus.isNotEmpty)
+            'read_status': readStatus,
+          'sort': sort,
+          if (direction != null && direction.isNotEmpty) 'dir': direction,
+          'limit': 500,
+          'offset': offset,
+        },
+      );
+      final data = response.data as Map<String, dynamic>;
+      final page = (data['items'] as List)
+          .map((item) => _bookFromJson(item as Map<String, dynamic>))
+          .toList();
+      books.addAll(page);
+      final total = (data['count'] as num?)?.toInt();
+      // A server from before pagination sends everything and no count: one
+      // page is the whole library, so stop instead of asking again forever.
+      if (page.isEmpty || total == null || books.length >= total) break;
+      offset += page.length;
+    }
+    return books;
   }
 
   @override
   Future<Book> getBook(int id) async {
     final response = await _get('/api/books/$id');
-    return Book.fromJson(response.data as Map<String, dynamic>);
+    return _bookFromJson(response.data as Map<String, dynamic>);
   }
 
   /// ``null`` when no book carries [isbn] (used to spot duplicates).
   @override
   Future<Book?> findByIsbn(String isbn) async {
     try {
-      final response = await _get('/api/books/by-isbn/${Uri.encodeComponent(isbn)}');
-      return Book.fromJson(response.data as Map<String, dynamic>);
+      final response = await _get(
+        '/api/books/by-isbn/${Uri.encodeComponent(isbn)}',
+      );
+      return _bookFromJson(response.data as Map<String, dynamic>);
     } on ApiNotFoundException {
       return null;
     }
@@ -286,13 +339,13 @@ class ApiClient implements LibraryRepo {
   @override
   Future<Book> createBook(Map<String, dynamic> payload) async {
     final response = await _send('POST', '/api/books', body: payload);
-    return Book.fromJson(response.data as Map<String, dynamic>);
+    return _bookFromJson(response.data as Map<String, dynamic>);
   }
 
   @override
   Future<Book> updateBook(int id, Map<String, dynamic> payload) async {
     final response = await _send('PUT', '/api/books/$id', body: payload);
-    return Book.fromJson(response.data as Map<String, dynamic>);
+    return _bookFromJson(response.data as Map<String, dynamic>);
   }
 
   @override
@@ -356,7 +409,12 @@ class ApiClient implements LibraryRepo {
     final response = await _send(
       'POST',
       '/api/locations',
-      body: {'name': name, 'parent_id': parentId, 'kind': kind, 'description': description},
+      body: {
+        'name': name,
+        'parent_id': parentId,
+        'kind': kind,
+        'description': description,
+      },
     );
     return Location.fromJson(response.data as Map<String, dynamic>);
   }
@@ -372,7 +430,12 @@ class ApiClient implements LibraryRepo {
     final response = await _send(
       'PUT',
       '/api/locations/$id',
-      body: {'name': name, 'parent_id': parentId, 'kind': kind, 'description': description},
+      body: {
+        'name': name,
+        'parent_id': parentId,
+        'kind': kind,
+        'description': description,
+      },
     );
     return Location.fromJson(response.data as Map<String, dynamic>);
   }
@@ -402,7 +465,12 @@ class ApiClient implements LibraryRepo {
     final response = await _send(
       'POST',
       '/api/statuses',
-      body: {'name': name, 'color': color, 'icon': icon, 'description': description},
+      body: {
+        'name': name,
+        'color': color,
+        'icon': icon,
+        'description': description,
+      },
     );
     return Status.fromJson(response.data as Map<String, dynamic>);
   }
@@ -418,7 +486,12 @@ class ApiClient implements LibraryRepo {
     final response = await _send(
       'PUT',
       '/api/statuses/$id',
-      body: {'name': name, 'color': color, 'icon': icon, 'description': description},
+      body: {
+        'name': name,
+        'color': color,
+        'icon': icon,
+        'description': description,
+      },
     );
     return Status.fromJson(response.data as Map<String, dynamic>);
   }
@@ -465,11 +538,63 @@ class ApiClient implements LibraryRepo {
     return Stats.fromJson(response.data as Map<String, dynamic>);
   }
 
+  // --- reading stats, goals and want-to-read list ------------------------- //
+  @override
+  Future<ReadingStats> personalStats() async {
+    final response = await _get('/api/personal-stats');
+    return ReadingStats.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<ReadingGoals> readingGoals() async {
+    final response = await _get('/api/goals');
+    return ReadingGoals.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> saveReadingGoals(ReadingGoals goals) =>
+      _send('POST', '/api/goals', body: goals.toJson());
+
+  @override
+  Future<List<WantEntry>> wantList() async {
+    final response = await _get('/api/wantlist');
+    return (response.data as List)
+        .map((item) => WantEntry.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<void> addWant(WantEntry entry) =>
+      _send('POST', '/api/wantlist', body: entry.toJson());
+
+  @override
+  Future<void> removeWant(String id) =>
+      _send('DELETE', '/api/wantlist/${Uri.encodeComponent(id)}');
+
+  @override
+  Future<Book> uploadCover(
+    int bookId, {
+    required String filename,
+    required List<int> bytes,
+  }) async {
+    final form = FormData.fromMap(<String, dynamic>{
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final response = await _send(
+      'POST',
+      '/api/books/$bookId/cover',
+      body: form,
+    );
+    return _bookFromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Online metadata for one ISBN (Open Library / Google Books).
   @override
   Future<SearchResult?> lookupIsbn(String isbn) async {
     try {
-      final response = await _get('/api/lookup/isbn/${Uri.encodeComponent(isbn)}');
+      final response = await _get(
+        '/api/lookup/isbn/${Uri.encodeComponent(isbn)}',
+      );
       return SearchResult.fromJson(response.data as Map<String, dynamic>);
     } on ApiNotFoundException {
       return null;
@@ -478,7 +603,10 @@ class ApiClient implements LibraryRepo {
 
   @override
   Future<List<SearchResult>> searchBooks(String query, {int limit = 12}) async {
-    final response = await _get('/api/search', query: {'q': query, 'limit': limit});
+    final response = await _get(
+      '/api/search',
+      query: {'q': query, 'limit': limit},
+    );
     return (response.data as List)
         .map((item) => SearchResult.fromJson(item as Map<String, dynamic>))
         .toList();

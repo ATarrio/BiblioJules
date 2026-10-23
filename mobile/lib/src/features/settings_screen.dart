@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_client.dart';
 import '../core/l10n.dart';
 import '../core/prefs.dart';
 import '../core/providers.dart';
@@ -75,12 +76,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _testConnection() async {
+    final l10n = context.localized;
+    final typed = normalizeBaseUrl(_server.text);
+    if (!isValidBaseUrl(typed)) {
+      showSnack(context, l10n.tr('Enter the address of your library server.'), isError: true);
+      return;
+    }
     setState(() => _testing = true);
-    await runGuarded(context, ref, () async {
-      await ref.read(apiClientProvider).me();
-      return true;
-    }, successMessage: context.localized.tr('Connected.'));
-    if (mounted) setState(() => _testing = false);
+    try {
+      // Test the address in the field, not the one currently in use: changing
+      // the field and pressing "Test" must not silently test the old server.
+      // No token: this only checks that the typed server answers, and a
+      // token issued by the current server must never be sent to another one.
+      final probe = ApiClient(baseUrl: typed)
+        ..setLanguage(ref.read(prefsProvider).effectiveLanguage);
+      await runGuarded(context, ref, () async {
+        await probe.ping();
+        return true;
+      }, successMessage: l10n.tr('Connected.'));
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   // --- local mode --------------------------------------------------------- //

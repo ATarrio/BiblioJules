@@ -268,7 +268,14 @@ int stampMicros(Object? value) {
   final parsed = DateTime.tryParse(
     '${text.replaceFirst(' ', 'T')}${hasZone ? '' : 'Z'}',
   );
-  return parsed?.microsecondsSinceEpoch ?? 0;
+  if (parsed == null) return 0;
+  final micros = parsed.microsecondsSinceEpoch;
+  // A device whose clock is years ahead would win every conflict forever.
+  // Clamp far-future stamps to "now" so a later edit with a sane clock can win.
+  final now = DateTime.now().microsecondsSinceEpoch;
+  return micros > now + const Duration(seconds: 300).inMicroseconds
+      ? now
+      : micros;
 }
 
 // --------------------------------------------------------------------------- //
@@ -285,7 +292,12 @@ Future<Database> _openLive(String path, {bool readOnly = false}) => openDatabase
   path,
   readOnly: readOnly,
   singleInstance: false,
-  onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+  onConfigure: (db) async {
+    await db.execute('PRAGMA foreign_keys = ON');
+    // The repo keeps its own connection open; wait for it instead of failing
+    // the whole sync with "database is locked" when a screen is saving.
+    await db.rawQuery('PRAGMA busy_timeout = 15000');
+  },
 );
 
 /// Open just the header of a snapshot, refusing anything unusable.
@@ -538,6 +550,40 @@ List<Map<String, Object?>> _sortLocations(List<Map<String, Object?>> rows) {
 // Applying a snapshot
 // --------------------------------------------------------------------------- //
 
+/// Keep a remote deletion locally so it keeps travelling to other devices.
+///
+/// Applying a deletion used to drop the marker, so an offline device could
+/// push the row back on the next sync.
+Future<void> _rememberRemoteTombstone(
+  DatabaseExecutor db,
+  String table,
+  Map<String, Object?> tombstone,
+) async {
+  final syncId = '${tombstone['sync_id']}';
+  final deletedAt = tombstone['deleted_at'];
+  final existing = await db.query(
+    'sync_tombstones',
+    columns: <String>['deleted_at'],
+    where: 'table_name = ? AND sync_id = ?',
+    whereArgs: <Object?>[table, syncId],
+    limit: 1,
+  );
+  if (existing.isEmpty) {
+    await db.insert('sync_tombstones', <String, Object?>{
+      'table_name': table,
+      'sync_id': syncId,
+      'deleted_at': deletedAt,
+    });
+  } else if (stampMicros(deletedAt) > stampMicros(existing.first['deleted_at'])) {
+    await db.update(
+      'sync_tombstones',
+      <String, Object?>{'deleted_at': deletedAt},
+      where: 'table_name = ? AND sync_id = ?',
+      whereArgs: <Object?>[table, syncId],
+    );
+  }
+}
+
 /// Deletions made on the other device, applied only where they still win.
 Future<void> _applyRemoteTombstones(
   DatabaseExecutor db,
@@ -580,6 +626,7 @@ Future<void> _applyRemoteTombstones(
       whereArgs: <Object?>[local['id']],
     );
     await db.delete('statuses', where: 'id = ?', whereArgs: <Object?>[local['id']]);
+    await _rememberRemoteTombstone(db, 'statuses', tombstone);
     summary.bump(summary.deleted, 'statuses');
   }
 
@@ -590,6 +637,7 @@ Future<void> _applyRemoteTombstones(
       continue;
     }
     await db.delete('books', where: 'id = ?', whereArgs: <Object?>[local['id']]);
+    await _rememberRemoteTombstone(db, 'books', tombstone);
     summary.bump(summary.deleted, 'books');
   }
 
@@ -622,6 +670,7 @@ Future<void> _applyRemoteTombstones(
         whereArgs: <Object?>[local['id']],
       );
       await db.delete('locations', where: 'id = ?', whereArgs: <Object?>[local['id']]);
+      await _rememberRemoteTombstone(db, 'locations', tombstone);
       summary.bump(summary.deleted, 'locations');
     }
   }
@@ -902,7 +951,23 @@ Future<Map<String, int>> _mergeBooks(
     if (local == null) {
       values['sync_id'] = syncId;
       values['created_at'] = remoteRow['created_at'];
-      final newId = await _insert(db, 'books', values);
+      int newId;
+      try {
+        newId = await _insert(db, 'books', values);
+      } on DatabaseException catch (error) {
+        // A duplicate ISBN must not abort the whole merge. Import the book
+        // without the ISBN and report the clash instead.
+        final isbnValue = values['isbn'];
+        if (isbnValue != null && '$error'.contains('books.isbn')) {
+          summary.conflicts.add(
+            'book “${values['title']}”: ISBN $isbnValue is already used by another book',
+          );
+          values['isbn'] = null;
+          newId = await _insert(db, 'books', values);
+        } else {
+          rethrow;
+        }
+      }
       final inserted = <String, Object?>{...values, 'id': newId};
       bySync[syncId] = inserted;
       if (inserted['isbn'] != null) byIsbn['${inserted['isbn']}'] = inserted;
@@ -932,7 +997,19 @@ Future<Map<String, int>> _mergeBooks(
         for (final entry in values.entries)
           if (entry.value != local[entry.key]) entry.key: entry.value,
       };
+      if (changed['isbn'] != null) {
+        final owner = byIsbn['${changed['isbn']}'];
+        if (owner != null && owner['id'] != local['id']) {
+          // The incoming ISBN belongs to a different local book. Keep the old
+          // ISBN instead of aborting the merge on the unique index.
+          changed.remove('isbn');
+          summary.conflicts.add(
+            'book “${local['title']}”: ISBN ${values['isbn']} is already used by another book',
+          );
+        }
+      }
       if (changed.isNotEmpty) {
+        final previousIsbn = local['isbn'];
         await _update(db, 'books', local['id']! as int, changed);
         if (_conflict(since, remoteRow, local)) {
           summary.conflicts.add(
@@ -940,6 +1017,12 @@ Future<Map<String, int>> _mergeBooks(
           );
         }
         local.addAll(changed);
+        // Keep the ISBN lookup in step with the row, otherwise a later remote
+        // row carrying the old ISBN matches the wrong book.
+        if (changed.containsKey('isbn')) {
+          if (previousIsbn != null) byIsbn.remove('$previousIsbn');
+          if (changed['isbn'] != null) byIsbn['${changed['isbn']}'] = local;
+        }
         summary.bump(summary.updated, 'books');
       }
       // The author set travels with the winning book row.
@@ -1049,6 +1132,47 @@ Future<void> _mergeAll(
     since,
   );
   await _mergeLoans(db, remote, await _rows(remote, 'loans'), bookMap, summary);
+  final pruned = await _pruneOrphans(db);
+  // A name whose only book was deleted on the other device is inserted by the
+  // merge and pruned again right here; do not report it as "added".
+  for (final entry in pruned.entries) {
+    for (final bucket in <Map<String, int>>[summary.added, summary.updated]) {
+      final left = (bucket[entry.key] ?? 0) - entry.value;
+      if (left > 0) {
+        bucket[entry.key] = left;
+      } else {
+        bucket.remove(entry.key);
+      }
+    }
+  }
+}
+
+/// Drop authors and publishers whose last book disappeared in this merge.
+///
+/// Like the server, this records no tombstone: it is garbage collection, and a
+/// name that comes back in a later snapshot is simply inserted again.
+Future<Map<String, int>> _pruneOrphans(DatabaseExecutor db) async {
+  final removed = <String, int>{};
+  for (final entry in <String, String>{
+    'authors': 'DELETE FROM authors WHERE id NOT IN '
+        '(SELECT author_id FROM book_authors)',
+    'publishers': 'DELETE FROM publishers WHERE id NOT IN '
+        '(SELECT publisher_id FROM books WHERE publisher_id IS NOT NULL)',
+  }.entries) {
+    final before =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM "${entry.key}"'),
+        ) ??
+        0;
+    await db.rawDelete(entry.value);
+    final after =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM "${entry.key}"'),
+        ) ??
+        0;
+    removed[entry.key] = before - after;
+  }
+  return removed;
 }
 
 /// Merge one snapshot into the live library, all-or-nothing.
@@ -1257,8 +1381,22 @@ class LibrarySync {
   final SyncTransport transport;
   final Future<Directory> Function() _scratchDirectory;
 
+  static bool _running = false;
+
   /// Merge the shared snapshot into this library, then publish the result.
   Future<SyncResult> run({bool force = false}) async {
+    if (_running) {
+      throw SyncException('A sync is already running.');
+    }
+    _running = true;
+    try {
+      return await _run(force: force);
+    } finally {
+      _running = false;
+    }
+  }
+
+  Future<SyncResult> _run({bool force = false}) async {
     final path = repo.databasePath;
     final name = repo.libraryName;
     if (path == null || name == null) {
@@ -1296,20 +1434,15 @@ class LibrarySync {
         remoteMeta.snapshotId != state.lastSnapshotId &&
         !mergedIds.contains(remoteMeta.snapshotId)) {
       await _backup(dbFile);
-      // The merge needs the only writer out of the way; the repo reopens after,
-      // even if the merge failed — a closed library would leave every screen
-      // broken until the app restarted.
-      await repo.close();
-      final SyncMergeSummary part;
-      try {
-        part = await mergeSnapshot(
-          dbFile.path,
-          remote,
-          since: state.lastSyncAt,
-        );
-      } finally {
-        await repo.open(name);
-      }
+      // Merge through its own connection. Closing the repo would tear down the
+      // handle every open screen is using (and reopening it loses any state the
+      // widgets hold), so the live and merge connections coexist; SQLite's
+      // busy timeout and WAL handle the hand-off.
+      final SyncMergeSummary part = await mergeSnapshot(
+        dbFile.path,
+        remote,
+        since: state.lastSyncAt,
+      );
       merge = _combine(merge, part);
       mergedIds.add(remoteMeta.snapshotId);
       state.lastSnapshotId = remoteMeta.snapshotId;
@@ -1323,6 +1456,15 @@ class LibrarySync {
       final latest = await readSnapshotMeta(remote);
       if (latest.snapshotId == remoteMeta.snapshotId) break;
       remoteMeta = latest;
+    }
+
+    // If the folder moved on after our last merge, we never saw the newest
+    // snapshot. Publishing now would overwrite changes we did not merge, so
+    // stop and ask the user to retry instead.
+    if (remoteMeta.snapshotId != state.lastSnapshotId) {
+      throw SyncException(
+        'The shared library kept changing while syncing. Please try again.',
+      );
     }
 
     // Only write the file again when the snapshot lacks something we have;

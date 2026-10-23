@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -23,7 +22,8 @@ from PySide6.QtWidgets import (
 
 from .. import preferences, themes
 from ..i18n import _
-from .repo import RepoError, login as repo_login
+from .repo import RemoteRepo, current_repo, login as repo_login
+from .workers import run_blocking
 
 
 class SettingsDialog(QDialog):
@@ -41,6 +41,21 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(540)
         self._token = preferences.get_api_token()
         self._account = preferences.get_account_name()
+        self._closed = False
+        self.destroyed.connect(self._mark_closed)
+        # A rejected token was cleared when the server answered 401, but the
+        # dialog may already be open (or the preference may predate the fix).
+        repo = current_repo()
+        if getattr(repo, "token_rejected", False):
+            self._token = ""
+            self._account = ""
+            try:
+                preferences.set_remote_session(token="", account="")
+            except OSError:
+                pass
+        # The URL the token was issued for. Changing the server without
+        # signing in again must not carry the old token over.
+        self._signed_in_url = preferences.get_backend_url() if self._token else ""
         self._build_ui()
 
     # -- construction ------------------------------------------------------- #
@@ -182,11 +197,15 @@ class SettingsDialog(QDialog):
             self.status.setText(_("Not signed in"))
 
     # -- actions ------------------------------------------------------------ #
+    def _mark_closed(self, *_: object) -> None:
+        self._closed = True
+
     def _browse_sync_folder(self) -> None:
         start = self.sync_file.text().strip() or str(Path.home())
         folder = QFileDialog.getExistingDirectory(self, _("Choose the shared folder"), start)
         if folder:
             self.sync_file.setText(folder)
+
     def _on_sign_in(self) -> None:
         url = self.url.text().strip()
         username = self.username.text().strip()
@@ -198,18 +217,38 @@ class SettingsDialog(QDialog):
             return
         self.message.setText(_("Signing in…"))
         self.sign_in_btn.setEnabled(False)
-        QApplication.processEvents()  # let the "Signing in…" message paint
-        try:
-            payload = repo_login(url, username, password)
-        except RepoError as exc:
-            self.message.setText(str(exc))
-            return
-        finally:
-            self.sign_in_btn.setEnabled(self.mode.currentData() == preferences.MODE_REMOTE)
+        # The request can take seconds on a slow link; never block the window.
+        run_blocking(
+            repo_login,
+            lambda payload: self._signed_in(payload, url, username),
+            self._sign_in_failed,
+            url,
+            username,
+            password,
+        )
 
+    def _sign_in_failed(self, message: str) -> None:
+        if self._closed:
+            return
+        self.sign_in_btn.setEnabled(self.mode.currentData() == preferences.MODE_REMOTE)
+        self.message.setText(message)
+
+    def _signed_in(self, payload: object, url: str, username: str) -> None:
+        if self._closed:
+            return
+        self.sign_in_btn.setEnabled(self.mode.currentData() == preferences.MODE_REMOTE)
+        if not isinstance(payload, dict):
+            self.message.setText(_("The server did not return a valid response."))
+            return
+        token = payload.get("token")
+        if not isinstance(token, str) or not token.strip():
+            self.message.setText(_("The server did not return a sign-in token."))
+            return
         user = payload.get("user") or {}
-        self._token = payload.get("token") or ""
-        self._account = user.get("username") or username
+        self._token = token.strip()
+        raw_name = user.get("username") if isinstance(user, dict) else None
+        self._account = str(raw_name) if raw_name else username
+        self._signed_in_url = url
         self.username.setText(self._account)
         self.password.clear()
         self.message.setText(_("Connected."))
@@ -217,20 +256,51 @@ class SettingsDialog(QDialog):
         self._sync_enabled()
 
     def _on_sign_out(self) -> None:
+        repo = current_repo()
+        if isinstance(repo, RemoteRepo) and repo.token:
+            # Revoke server-side as well as forgetting locally. The request is
+            # best-effort and must not block the dialog.
+            run_blocking(
+                repo.logout,
+                lambda _result=None: None,
+                self._sign_out_failed,
+            )
         self._token = ""
         self._account = ""
+        self._signed_in_url = ""
         self.password.clear()
         self.message.setText(_("Signed out. The server token was forgotten."))
         self._render_status()
         self._sync_enabled()
 
+    def _sign_out_failed(self, message: str) -> None:
+        # The local token is already forgotten; mention that revocation could
+        # not be confirmed so the user can revoke it from the server if needed.
+        if not self._closed:
+            self.message.setText(
+                _("Signed out locally, but the server could not be reached: %s")
+                % message
+            )
+
     # -- result ------------------------------------------------------------- #
+    def done(self, result: int) -> None:
+        self._closed = True
+        super().done(result)
+
     def result_data(self) -> dict:
+        url = self.url.text().strip()
+        token = self._token
+        account = self._account
+        if token and self._signed_in_url and url != self._signed_in_url:
+            # The URL changed after the token was issued; require a fresh
+            # sign-in instead of sending the old token to another server.
+            token = ""
+            account = ""
         return {
             "mode": self.mode.currentData() or preferences.MODE_LOCAL,
-            "backend_url": self.url.text().strip(),
-            "token": self._token,
-            "account": self._account,
+            "backend_url": url,
+            "token": token,
+            "account": account,
             "color_theme": self.color_theme.currentData() or themes.DEFAULT_THEME,
             "sync_file": self.sync_file.text().strip(),
             "sync_on_start": self.sync_on_start.isChecked(),

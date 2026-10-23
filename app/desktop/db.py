@@ -10,9 +10,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import Base, SessionLocal, engine, ensure_sync_schema
+from ..i18n import _
 from ..services.library import prune_orphans, sync_published_years
 from ..services.seed import seed_defaults
 
@@ -28,6 +30,27 @@ def session_scope() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db
+    except ValueError as exc:
+        # Service-layer validation (bad reference, duplicate loan, …) already
+        # carries a user-facing message. Give the desktop the same error type
+        # as the remote backend so every view handles it uniformly.
+        from .repo import RepoError
+
+        raise RepoError(str(exc)) from exc
+    except SQLAlchemyError as exc:
+        from .repo import RepoError
+
+        detail = str(exc).lower()
+        if "database is locked" in detail or "database table is locked" in detail:
+            raise RepoError(
+                _(
+                    "The library database is busy (another window or the web app "
+                    "is saving changes). Wait a moment and try again."
+                )
+            ) from exc
+        raise RepoError(
+            _("Could not read or write the library database: %s") % exc
+        ) from exc
     finally:
         db.close()
 

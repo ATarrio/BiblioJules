@@ -16,6 +16,8 @@
 ///   must not sort differently from a laptop.
 library;
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -53,6 +55,10 @@ class LocalRepo implements LibraryRepo {
   L10n? _l10n;
 
   final OnlineLookup _lookup = OnlineLookup();
+
+  /// Serialise read-modify-write cycles on the reading JSON files, so two
+  /// quick taps cannot lose an entry. File writes are atomic (temp + rename).
+  Future<void> _readingQueue = Future<void>.value();
 
   // ------------------------------------------------------------------------- //
   // Lifecycle
@@ -186,10 +192,98 @@ class LocalRepo implements LibraryRepo {
     return folder;
   }
 
+  /// Where the device-wide reading goals and want-to-read list live.
+  ///
+  /// They are deliberately not next to one library: like the server's
+  /// ``data/goals.json`` they belong to the device, and renaming a library
+  /// must not make them disappear.
+  Future<Directory> _readingFolder() async {
+    final base = await _documentsDirectory();
+    final folder = Directory('${base.path}${Platform.pathSeparator}reading');
+    if (!folder.existsSync()) await folder.create(recursive: true);
+    return folder;
+  }
+
+  Future<File> _readingFile(String name) async {
+    final folder = await _readingFolder();
+    return File('${folder.path}${Platform.pathSeparator}$name');
+  }
+
+  Future<Directory> _coversFolder() async {
+    final base = await _documentsDirectory();
+    final folder = Directory('${base.path}${Platform.pathSeparator}covers');
+    if (!folder.existsSync()) await folder.create(recursive: true);
+    return folder;
+  }
+
+  /// Serialise one read-modify-write of [action] behind earlier ones.
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final result = _readingQueue.then((_) => action());
+    _readingQueue = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  Future<Object?> _readJsonFile(File file, Object? fallback) async {
+    try {
+      return jsonDecode(await file.readAsString());
+    } on FileSystemException {
+      return fallback;
+    } on FormatException {
+      return fallback;
+    }
+  }
+
+  Future<void> _writeJsonFile(File file, Object? data) async {
+    await file.parent.create(recursive: true);
+    final temp = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    try {
+      await temp.writeAsString(jsonEncode(data), flush: true);
+      await temp.rename(file.path);
+    } finally {
+      if (await temp.exists()) await temp.delete();
+    }
+  }
+
+  /// Image extension from the bytes themselves, mirroring ``covers.py``.
+  String? _sniffImage(List<int> bytes) {
+    bool starts(List<int> prefix) {
+      if (bytes.length < prefix.length) return false;
+      for (var index = 0; index < prefix.length; index++) {
+        if (bytes[index] != prefix[index]) return false;
+      }
+      return true;
+    }
+
+    if (starts(const [0xFF, 0xD8, 0xFF])) return '.jpg';
+    if (starts(const [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) {
+      return '.png';
+    }
+    if (starts(const [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
+        starts(const [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])) {
+      return '.gif';
+    }
+    if (bytes.length >= 12 &&
+        starts(const [0x52, 0x49, 0x46, 0x46]) &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return '.webp';
+    }
+    return null;
+  }
+
   /// The path of the library file called [name] (whether or not it exists).
   Future<File> libraryFile(String name) async {
     final folder = await _librariesFolder();
-    return File('${folder.path}${Platform.pathSeparator}${libraryFileName(name)}');
+    return File(
+      '${folder.path}${Platform.pathSeparator}${libraryFileName(name)}',
+    );
   }
 
   /// Give the open library a new name, moving its file when the slug changes.
@@ -214,7 +308,9 @@ class LocalRepo implements LibraryRepo {
     final target = await libraryFile(label);
     if (target.existsSync()) {
       throw ApiValidationException(
-        _tf('A library named “%s” already exists on this device.', <Object?>[label]),
+        _tf('A library named “%s” already exists on this device.', <Object?>[
+          label,
+        ]),
         statusCode: 400,
       );
     }
@@ -244,7 +340,9 @@ class LocalRepo implements LibraryRepo {
   Future<void> exportTo(File target) async {
     final db = _requireDb();
     if (target.existsSync()) await target.delete();
-    if (!target.parent.existsSync()) await target.parent.create(recursive: true);
+    if (!target.parent.existsSync()) {
+      await target.parent.create(recursive: true);
+    }
 
     // Any pending WAL frames belong in the file we are about to copy. This is a
     // query, not an ``execute``: the pragma answers with a row, and Android's
@@ -304,7 +402,10 @@ class LocalRepo implements LibraryRepo {
   /// simply not an SQLite database.
   Future<void> validateLibraryFile(File file) async {
     if (!file.existsSync() || file.lengthSync() == 0) {
-      throw ApiValidationException(_t('The chosen file is empty.'), statusCode: 400);
+      throw ApiValidationException(
+        _t('The chosen file is empty.'),
+        statusCode: 400,
+      );
     }
 
     final Database db;
@@ -385,9 +486,23 @@ class LocalRepo implements LibraryRepo {
     try {
       final version =
           Sqflite.firstIntValue(await db.rawQuery('PRAGMA user_version')) ?? 0;
-      if (version == 0) {
-        await db.execute('PRAGMA user_version = $kLibrarySchemaVersion');
-      }
+      if (version != 0) return;
+      // ``user_version = 0`` means either a brand-new file or a database that
+      // arrived without a stamp. Look at the actual tables: a v1 library still
+      // needs the 1 -> 2 upgrade (sync columns), only a v2 one may be stamped
+      // as current. Stamping a v1 file as v2 would silently skip that upgrade.
+      final tables = <String>{
+        for (final row in await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type = 'table'",
+        ))
+          '${row['name']}'.toLowerCase(),
+      };
+      if (!tables.contains('books')) return; // empty file: let onCreate run
+      final columns = await db.rawQuery('PRAGMA table_info(books)');
+      final hasSync = columns.any((row) => row['name'] == 'sync_id');
+      await db.execute(
+        'PRAGMA user_version = ${hasSync ? kLibrarySchemaVersion : 1}',
+      );
     } finally {
       await db.close();
     }
@@ -431,7 +546,8 @@ class LocalRepo implements LibraryRepo {
   // ------------------------------------------------------------------------- //
   String _t(String source) => _l10n?.tr(source) ?? source;
 
-  String _tf(String source, List<Object?> args) => _l10n?.tf(source, args) ?? source;
+  String _tf(String source, List<Object?> args) =>
+      _l10n?.tf(source, args) ?? source;
 
   // ------------------------------------------------------------------------- //
   // Reading books
@@ -584,10 +700,11 @@ class LocalRepo implements LibraryRepo {
       // Same key as the server: the alphabetically first author name, then the
       // title — both case-folded.
       String keyOf(Map<String, dynamic> item) {
-        final names = (item['authors'] as List)
-            .map((name) => '$name'.toLowerCase())
-            .toList()
-          ..sort();
+        final names =
+            (item['authors'] as List)
+                .map((name) => '$name'.toLowerCase())
+                .toList()
+              ..sort();
         final first = names.isEmpty ? '' : names.first;
         return '$first\u0000${'${item['title']}'.toLowerCase()}';
       }
@@ -616,7 +733,12 @@ class LocalRepo implements LibraryRepo {
     final db = _requireDb();
     final normalized = normalizeIsbn(isbn);
     if (normalized.isEmpty) return null;
-    final rows = await db.query('books', where: 'isbn = ?', whereArgs: [normalized], limit: 1);
+    final rows = await db.query(
+      'books',
+      where: 'isbn = ?',
+      whereArgs: [normalized],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return Book.fromJson((await _booksJson(db, rows)).single);
   }
@@ -637,7 +759,12 @@ class LocalRepo implements LibraryRepo {
   }
 
   Future<Map<String, Object?>?> _bookRow(DatabaseExecutor db, int id) async {
-    final rows = await db.query('books', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'books',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     return rows.isEmpty ? null : rows.first;
   }
 
@@ -666,7 +793,9 @@ class LocalRepo implements LibraryRepo {
       ' FROM book_authors ba JOIN authors a ON a.id = ba.author_id'
       ' ORDER BY a.name',
     )) {
-      (authors[row['book_id']! as int] ??= <String>[]).add(row['name']! as String);
+      (authors[row['book_id']! as int] ??= <String>[]).add(
+        row['name']! as String,
+      );
     }
 
     final loans = <int, Map<String, Object?>>{};
@@ -679,7 +808,8 @@ class LocalRepo implements LibraryRepo {
     }
 
     return <Map<String, dynamic>>[
-      for (final row in rows) _bookJson(row, authors, publishers, statuses, locations, loans),
+      for (final row in rows)
+        _bookJson(row, authors, publishers, statuses, locations, loans),
     ];
   }
 
@@ -704,7 +834,10 @@ class LocalRepo implements LibraryRepo {
       publisher: publishers[row['publisher_id'] as int?],
       location: locationRow == null
           ? null
-          : locationToJson(locationRow, fullPath: _fullPath(locations, locationId!)),
+          : locationToJson(
+              locationRow,
+              fullPath: _fullPath(locations, locationId!),
+            ),
       status: statusRow == null ? null : statusToJson(statusRow),
       activeLoan: loanRow == null ? null : loanToJson(loanRow),
     );
@@ -727,7 +860,9 @@ class LocalRepo implements LibraryRepo {
       };
       if (_isFalsy(data['status_id'])) {
         final fallback = await _defaultStatusId(txn);
-        if (fallback != null) data = <String, dynamic>{...data, 'status_id': fallback};
+        if (fallback != null) {
+          data = <String, dynamic>{...data, 'status_id': fallback};
+        }
       }
       values.addAll(await _applyFields(txn, data, currentPublishedDate: null));
       final bookId = await txn.insert('books', values);
@@ -875,7 +1010,11 @@ class LocalRepo implements LibraryRepo {
     }
     if (data.containsKey('authors')) {
       // Assigning replaces the whole list, exactly like the relationship does.
-      await db.delete('book_authors', where: 'book_id = ?', whereArgs: <Object?>[bookId]);
+      await db.delete(
+        'book_authors',
+        where: 'book_id = ?',
+        whereArgs: <Object?>[bookId],
+      );
       final seen = <String>{};
       for (final name in _splitNames(data['authors'])) {
         if (!seen.add(name.toLowerCase())) continue;
@@ -931,15 +1070,11 @@ class LocalRepo implements LibraryRepo {
     final now = nowStamp();
     for (final syncId in syncIds) {
       if (syncId == null || syncId.isEmpty) continue;
-      await db.insert(
-        'sync_tombstones',
-        <String, Object?>{
-          'table_name': table,
-          'sync_id': syncId,
-          'deleted_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('sync_tombstones', <String, Object?>{
+        'table_name': table,
+        'sync_id': syncId,
+        'deleted_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -979,7 +1114,9 @@ class LocalRepo implements LibraryRepo {
         'book_id': bookId,
         'borrower_name': borrowerName.trim(),
         'borrower_contact': contact.isEmpty ? null : contact,
-        'lent_at': (lentAt == null || lentAt.trim().isEmpty) ? todayDate() : lentAt.trim(),
+        'lent_at': (lentAt == null || lentAt.trim().isEmpty)
+            ? todayDate()
+            : lentAt.trim(),
         'due_at': (dueAt == null || dueAt.trim().isEmpty) ? null : dueAt.trim(),
         'returned_at': null,
         'notes': note.isEmpty ? null : note,
@@ -1000,7 +1137,11 @@ class LocalRepo implements LibraryRepo {
       }
       return loanId;
     });
-    final row = await db.query('loans', where: 'id = ?', whereArgs: <Object?>[id]);
+    final row = await db.query(
+      'loans',
+      where: 'id = ?',
+      whereArgs: <Object?>[id],
+    );
     return Loan.fromJson(loanToJson(row.first));
   }
 
@@ -1099,7 +1240,8 @@ class LocalRepo implements LibraryRepo {
 
     final newParent = _toId(parentId);
     // A location may never become its own ancestor.
-    if (newParent != null && _descendantIds(locations, id).contains(newParent)) {
+    if (newParent != null &&
+        _descendantIds(locations, id).contains(newParent)) {
       throw ApiValidationException(
         _t('A location cannot be moved inside itself.'),
         statusCode: 400,
@@ -1151,7 +1293,9 @@ class LocalRepo implements LibraryRepo {
     );
   }
 
-  Future<Map<int, Map<String, Object?>>> _locationRows(DatabaseExecutor db) async {
+  Future<Map<int, Map<String, Object?>>> _locationRows(
+    DatabaseExecutor db,
+  ) async {
     return <int, Map<String, Object?>>{
       for (final row in await db.query('locations')) row['id']! as int: row,
     };
@@ -1194,7 +1338,9 @@ class LocalRepo implements LibraryRepo {
   List<int> _flattenLocationIds(Map<int, Map<String, Object?>> locations) {
     final children = <int?, List<Map<String, Object?>>>{};
     for (final row in locations.values) {
-      (children[row['parent_id'] as int?] ??= <Map<String, Object?>>[]).add(row);
+      (children[row['parent_id'] as int?] ??= <Map<String, Object?>>[]).add(
+        row,
+      );
     }
     for (final entry in children.entries) {
       if (entry.key == null) {
@@ -1203,9 +1349,9 @@ class LocalRepo implements LibraryRepo {
         );
       } else {
         entry.value.sort(
-          (a, b) => (a['name']! as String)
-              .toLowerCase()
-              .compareTo((b['name']! as String).toLowerCase()),
+          (a, b) => (a['name']! as String).toLowerCase().compareTo(
+            (b['name']! as String).toLowerCase(),
+          ),
         );
       }
     }
@@ -1241,7 +1387,10 @@ class LocalRepo implements LibraryRepo {
     final db = _requireDb();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      throw ApiValidationException(_t('A status name is required.'), statusCode: 400);
+      throw ApiValidationException(
+        _t('A status name is required.'),
+        statusCode: 400,
+      );
     }
     if (await _statusNameExists(db, trimmed)) {
       throw ApiValidationException(
@@ -1285,8 +1434,8 @@ class LocalRepo implements LibraryRepo {
     final values = <String, Object?>{};
     final trimmed = name.trim();
     if (trimmed.isNotEmpty) {
-      final isRename = trimmed.toLowerCase() !=
-          (existing['name']! as String).toLowerCase();
+      final isRename =
+          trimmed.toLowerCase() != (existing['name']! as String).toLowerCase();
       if (isRename && await _statusNameExists(db, trimmed, excludeId: id)) {
         throw ApiValidationException(
           _tf('A status named “%s” already exists.', <Object?>[trimmed]),
@@ -1307,7 +1456,12 @@ class LocalRepo implements LibraryRepo {
     values['description'] = _blankToNull(description);
     values['updated_at'] = nowStamp();
 
-    await db.update('statuses', values, where: 'id = ?', whereArgs: <Object?>[id]);
+    await db.update(
+      'statuses',
+      values,
+      where: 'id = ?',
+      whereArgs: <Object?>[id],
+    );
     return _statusById(db, id);
   }
 
@@ -1340,14 +1494,21 @@ class LocalRepo implements LibraryRepo {
     return true;
   }
 
-  Future<Map<int, Map<String, Object?>>> _statusRows(DatabaseExecutor db) async {
+  Future<Map<int, Map<String, Object?>>> _statusRows(
+    DatabaseExecutor db,
+  ) async {
     return <int, Map<String, Object?>>{
       for (final row in await db.query('statuses')) row['id']! as int: row,
     };
   }
 
   Future<Map<String, Object?>?> _statusRow(DatabaseExecutor db, int id) async {
-    final rows = await db.query('statuses', where: 'id = ?', whereArgs: <Object?>[id], limit: 1);
+    final rows = await db.query(
+      'statuses',
+      where: 'id = ?',
+      whereArgs: <Object?>[id],
+      limit: 1,
+    );
     return rows.isEmpty ? null : rows.first;
   }
 
@@ -1358,7 +1519,12 @@ class LocalRepo implements LibraryRepo {
   }
 
   Future<int?> _statusBySlug(DatabaseExecutor db, String slug) async {
-    final rows = await db.query('statuses', where: 'slug = ?', whereArgs: <Object?>[slug], limit: 1);
+    final rows = await db.query(
+      'statuses',
+      where: 'slug = ?',
+      whereArgs: <Object?>[slug],
+      limit: 1,
+    );
     return rows.isEmpty ? null : rows.first['id']! as int;
   }
 
@@ -1374,7 +1540,11 @@ class LocalRepo implements LibraryRepo {
     if (preferred.isNotEmpty) return preferred.first['id']! as int;
     final available = await _statusBySlug(db, 'available');
     if (available != null) return available;
-    final first = await db.query('statuses', orderBy: 'sort_order, name', limit: 1);
+    final first = await db.query(
+      'statuses',
+      orderBy: 'sort_order, name',
+      limit: 1,
+    );
     return first.isEmpty ? null : first.first['id']! as int;
   }
 
@@ -1385,7 +1555,9 @@ class LocalRepo implements LibraryRepo {
   }) async {
     final rows = await db.query(
       'statuses',
-      where: excludeId == null ? 'lower(name) = ?' : 'lower(name) = ? AND id != ?',
+      where: excludeId == null
+          ? 'lower(name) = ?'
+          : 'lower(name) = ? AND id != ?',
       whereArgs: excludeId == null
           ? <Object?>[name.toLowerCase()]
           : <Object?>[name.toLowerCase(), excludeId],
@@ -1442,9 +1614,7 @@ class LocalRepo implements LibraryRepo {
       "SELECT DISTINCT saga FROM books WHERE saga IS NOT NULL AND saga != ''",
     );
     final names = rows.map((row) => row['saga']! as String).toList();
-    names.sort(
-      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-    );
+    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return names;
   }
 
@@ -1503,10 +1673,198 @@ class LocalRepo implements LibraryRepo {
           if (book['active_loan'] != null)
             <String, dynamic>{
               ...(book['active_loan']! as Map<String, dynamic>),
-              'book': <String, dynamic>{'id': book['id'], 'title': book['title']},
+              'book': <String, dynamic>{
+                'id': book['id'],
+                'title': book['title'],
+              },
             },
       ],
     });
+  }
+
+  // ------------------------------------------------------------------------- //
+  // Reading stats, goals and want-to-read list
+  // ------------------------------------------------------------------------- //
+  @override
+  Future<ReadingStats> personalStats() async {
+    final db = _requireDb();
+    final shared = await _statsJson();
+    final rows = await db.rawQuery(
+      'SELECT read_status, page_count, score FROM books',
+    );
+    final byStatus = <String, int>{};
+    var pagesRead = 0;
+    final ratings = <double>[];
+    for (final row in rows) {
+      final status = '${row['read_status'] ?? 'unread'}';
+      byStatus[status] = (byStatus[status] ?? 0) + 1;
+      if (status == 'read') {
+        final pages = _toInt(row['page_count']) ?? 0;
+        if (pages > 0) pagesRead += pages;
+        final score = (row['score'] as num?)?.toDouble();
+        if (score != null) ratings.add(score);
+      }
+    }
+    final total = _toInt(shared['total']) ?? 0;
+    final wishlist = _toInt(shared['wishlist']) ?? 0;
+    final avg = ratings.isEmpty
+        ? null
+        : _roundHalfToEven(
+                (ratings.reduce((a, b) => a + b) / ratings.length) * 10,
+              ) /
+              10;
+    return ReadingStats.fromJson(<String, dynamic>{
+      'total_books': total,
+      'in_library': total >= wishlist ? total - wishlist : total,
+      'books_read': byStatus['read'] ?? 0,
+      'pages_read': pagesRead,
+      'avg_rating': avg,
+      'currently_reading': byStatus['currently_reading'] ?? 0,
+      'loans': shared['loans'],
+      'wishlist': wishlist,
+      'authors': shared['authors'],
+      'status_breakdown': <String, int>{
+        for (final key in const <String>[
+          'read',
+          'currently_reading',
+          'dnf',
+          'lost',
+          'donated',
+          'unread',
+          'to_read',
+        ])
+          key: byStatus[key] ?? 0,
+      },
+    });
+  }
+
+  ReadingGoals _cleanGoals(ReadingGoals goals) => ReadingGoals(
+    year: goals.year == null || goals.year! <= 0 ? null : goals.year,
+    targetBooks: goals.targetBooks < 0 ? 0 : goals.targetBooks,
+    targetPages: goals.targetPages < 0 ? 0 : goals.targetPages,
+    progress: goals.progress,
+  );
+
+  @override
+  Future<ReadingGoals> readingGoals() async {
+    final file = await _readingFile('goals.json');
+    final data = await _readJsonFile(file, const <String, dynamic>{});
+    return ReadingGoals.fromJson(
+      data is Map ? Map<String, dynamic>.from(data) : const <String, dynamic>{},
+    );
+  }
+
+  @override
+  Future<void> saveReadingGoals(ReadingGoals goals) async {
+    final clean = _cleanGoals(goals);
+    await _serialized(() async {
+      final file = await _readingFile('goals.json');
+      await _writeJsonFile(file, clean.toJson());
+    });
+  }
+
+  @override
+  Future<List<WantEntry>> wantList() async {
+    final file = await _readingFile('want_list.json');
+    final data = await _readJsonFile(file, const <Object?>[]);
+    if (data is! List) return const [];
+    return [
+      for (final item in data)
+        if (item is Map) WantEntry.fromJson(Map<String, dynamic>.from(item)),
+    ];
+  }
+
+  @override
+  Future<void> addWant(WantEntry entry) async {
+    await _serialized(() async {
+      final file = await _readingFile('want_list.json');
+      final data = await _readJsonFile(file, const <Object?>[]);
+      final items = <Map<String, dynamic>>[
+        if (data is List)
+          for (final item in data)
+            if (item is Map) Map<String, dynamic>.from(item),
+      ];
+      final isbn = (entry.isbn ?? '').trim();
+      final title = entry.title.trim().toLowerCase();
+      if (isbn.isNotEmpty) {
+        items.removeWhere((item) => '${item['isbn'] ?? ''}'.trim() == isbn);
+      } else if (title.isNotEmpty) {
+        items.removeWhere(
+          (item) => '${item['title'] ?? ''}'.trim().toLowerCase() == title,
+        );
+      }
+      items.add(entry.toJson());
+      await _writeJsonFile(file, items);
+    });
+  }
+
+  @override
+  Future<void> removeWant(String id) async {
+    await _serialized(() async {
+      final file = await _readingFile('want_list.json');
+      final data = await _readJsonFile(file, const <Object?>[]);
+      if (data is! List) return;
+      await _writeJsonFile(file, <Map<String, dynamic>>[
+        for (final item in data)
+          if (item is Map && '${item['id'] ?? ''}' != id)
+            Map<String, dynamic>.from(item),
+      ]);
+    });
+  }
+
+  @override
+  Future<Book> uploadCover(
+    int bookId, {
+    required String filename,
+    required List<int> bytes,
+  }) async {
+    final db = _requireDb();
+    final existing = await _bookRow(db, bookId);
+    if (existing == null) throw ApiNotFoundException(_t('Book not found'));
+    if (bytes.isEmpty) {
+      throw ApiValidationException(_t('That file is empty.'), statusCode: 400);
+    }
+    if (bytes.length > 10 * 1024 * 1024) {
+      throw ApiValidationException(
+        _t('That image is too large (the limit is 10 MB).'),
+        statusCode: 413,
+      );
+    }
+    final suffix = _sniffImage(bytes);
+    if (suffix == null) {
+      throw ApiValidationException(
+        _t('That file is not a supported image.'),
+        statusCode: 400,
+      );
+    }
+
+    final folder = await _coversFolder();
+    final name = 'book-$bookId-${DateTime.now().microsecondsSinceEpoch}$suffix';
+    final file = File('${folder.path}${Platform.pathSeparator}$name');
+    await file.writeAsBytes(bytes, flush: true);
+    final oldUrl = existing['cover_url'] as String?;
+    try {
+      final book = await updateBook(bookId, <String, dynamic>{
+        'cover_url': Uri.file(file.path).toString(),
+      });
+      await _deleteLocalCover(oldUrl);
+      return book;
+    } on Object {
+      // The row did not take the new URL: remove the orphaned image.
+      if (await file.exists()) await file.delete();
+      rethrow;
+    }
+  }
+
+  Future<void> _deleteLocalCover(String? url) async {
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != 'file') return;
+    final folder = await _coversFolder();
+    final path = uri.toFilePath();
+    if (!path.startsWith('${folder.path}${Platform.pathSeparator}')) return;
+    final file = File(path);
+    if (await file.exists()) await file.delete();
   }
 
   // ------------------------------------------------------------------------- //

@@ -19,6 +19,7 @@ class BookIn(BaseModel):
     authors: list[str] | str | None = None
     publisher: str | None = None
     published_date: str | None = None
+    published_year: int | None = None
     description: str | None = None
     page_count: int | None = None
     language: str | None = None

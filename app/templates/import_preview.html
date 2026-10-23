@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Import a CSV') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{{ _('Import a CSV') }}</h1>
+  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Review the rows below, then import the ones you want.') }}</p>
+</div>
+
+<div class="max-w-5xl">
+  {% include "import/_preview.html" %}
+</div>
+{% endblock %}

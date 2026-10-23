@@ -253,13 +253,17 @@ matching Qt runtime, so there's no system Qt to install. The desktop app needs
 the same Python as the web app (installed in the same virtual environment).
 
 The window has a sidebar mirroring the web pages — **Dashboard, Catalog,
-Locations, Statuses, Discover** — with the same capabilities:
+Discover, Reading stats, Want-to-read list, Import, Locations, Statuses,
+Settings** — with the same capabilities:
 
 - browse, search and filter the catalog; add/edit/delete books;
 - sort any list by clicking its column headers;
 - scan-and-lookup an ISBN (or search online and add to the wishlist);
 - lend and return books, with loan history;
-- manage the nested location tree and the customisable statuses.
+- track personal reading stats and goals, and keep a want-to-read list;
+- bulk-import a Goodreads or StoryGraph CSV;
+- manage the nested location tree and the customisable statuses;
+- open the settings dialog from the sidebar or the File menu.
 
 The button at the bottom of the sidebar always shows where the data comes from
 (the local database, or the account you signed in with) and reopens the settings
@@ -309,9 +313,10 @@ flutter run --release      # or: flutter build apk --split-per-abi
 ```
 
 Both modes have the same features as the web and desktop front-ends — dashboard,
-searchable/filterable catalog, ISBN scanning, locations, statuses, lending,
-loans history, online discovery — everything except user management, which
-stays admin-only on the web.
+searchable/filterable catalog, ISBN scanning, reading stats and goals, a
+want-to-read list, CSV import, cover upload, locations, statuses, lending, loans
+history, online discovery — everything except user management, which stays
+admin-only on the web.
 
 ### Moving a library between the phone and a server
 

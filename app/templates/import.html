@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}{{ _('Import a CSV') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{{ _('Import a CSV') }}</h1>
+  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Bulk-add books from Goodreads, StoryGraph or any CSV export.') }}</p>
+</div>
+
+<div class="max-w-3xl">
+  <div class="rounded-2xl border border-slate-200 bg-card p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <form method="post" action="/import/csv" enctype="multipart/form-data" class="space-y-4">
+      <input type="hidden" name="_csrf" value="{{ csrf_token or '' }}">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">{{ _('Choose a CSV file') }}</label>
+        <input type="file" name="file" aria-label="{{ _('CSV file') }}" accept=".csv,text/csv" required
+               class="mt-1 block w-full cursor-pointer rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+        <p class="mt-2 text-xs text-slate-400">{{ _('Goodreads, StoryGraph, or any CSV with ISBN, title and author columns.') }}</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="submit"
+                class="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-brand-ink shadow-sm transition hover:bg-brand-700">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          {{ _('Preview import') }}
+        </button>
+        <a href="/books" class="text-sm font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400">{{ _('Cancel') }}</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Reading stats') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{{ _('Reading stats') }}</h1>
+  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ _('Personal reading insights, stored on this device only.') }}</p>
+</div>
+
+<div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
+  <!-- Stats cards -->
+  <div class="lg:col-span-2">
+    <div class="rounded-2xl border border-slate-200 bg-card p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="mb-4 text-lg font-semibold text-slate-900 dark:text-white">{{ _('Your reading stats') }}</h2>
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Books read') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-books-read">—</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Pages read') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-pages-read">—</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Average rating') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-avg-rating">—</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Currently reading') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-currently-reading">—</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('DNF') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-dnf">—</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/50">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Lost / donated') }}</div>
+          <div class="mt-1 text-2xl font-bold text-slate-900 dark:text-white" id="stats-lost-donated">—</div>
+        </div>
+      </div>
+      <p class="mt-4 text-xs text-slate-400">{{ _('These numbers are computed from your shared library but stored locally — they do not travel across sync merges.') }}</p>
+    </div>
+  </div>
+
+  <!-- Goal setup -->
+  <div class="lg:col-span-1">
+    <div class="rounded-2xl border border-slate-200 bg-card p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="mb-4 text-lg font-semibold text-slate-900 dark:text-white">{{ _('Reading goals') }}</h2>
+      <form id="goals-form" class="space-y-4">
+        <div>
+          <label for="goals-year" class="block text-xs font-medium text-slate-700 dark:text-slate-300">{{ _('Year') }}</label>
+          <select id="goals-year" class="mt-1 block w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm">
+            <option value="">{{ _('Any year') }}</option>
+            {% for year in range(current_year - 2, current_year + 2) %}
+              <option value="{{ year }}">{{ year }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="goals-target-books" class="block text-xs font-medium text-slate-700 dark:text-slate-300">{{ _('Target books') }}</label>
+          <input type="number" id="goals-target-books" min="0" class="mt-1 block w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label for="goals-target-pages" class="block text-xs font-medium text-slate-700 dark:text-slate-300">{{ _('Target pages') }}</label>
+          <input type="number" id="goals-target-pages" min="0" class="mt-1 block w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm">
+        </div>
+        <button type="submit" class="inline-flex w-full justify-center rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-brand-ink shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+          {{ _('Save goals') }}
+        </button>
+      </form>
+
+      <div class="mt-6" id="goals-progress">
+        <h3 class="mb-3 text-sm font-medium text-slate-900 dark:text-white">{{ _('Progress') }}</h3>
+        <div id="reading-goals-host">
+          <div class="text-xs text-slate-500 dark:text-slate-400">{{ _('Set your goals above to see progress.') }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const _i18n = (key) => {
+    const map = window.BIBLIO_I18N || {};
+    const strings = map.strings || {};
+    return strings[key] || key;
+  };
+
+  const goalsForm = document.getElementById('goals-form');
+  if (goalsForm) {
+    const yearEl = document.getElementById('goals-year');
+    const booksEl = document.getElementById('goals-target-books');
+    const pagesEl = document.getElementById('goals-target-pages');
+
+    // Prefill the form with whatever is already saved for this device.
+    fetch('/api/goals')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((g) => {
+        if (!g) return;
+        if (g.year) {
+          const value = String(g.year);
+          // A goal set years ago may be outside the generated options; keep it
+          // selectable instead of silently showing "Any year".
+          if (!Array.from(yearEl.options).some((option) => option.value === value)) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            yearEl.appendChild(option);
+          }
+          yearEl.value = value;
+        }
+        booksEl.value = g.target_books || '';
+        pagesEl.value = g.target_pages || '';
+      })
+      .catch(() => {});
+
+    goalsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      // Progress is derived from live stats, never typed by the user.
+      let progress = { books_read: 0, pages_read: 0 };
+      try {
+        const s = await fetch('/api/personal-stats').then((r) => (r.ok ? r.json() : null));
+        if (s) progress = { books_read: s.books_read || 0, pages_read: s.pages_read || 0 };
+      } catch (err) { /* leave defaults */ }
+
+      const payload = {
+        year: yearEl.value ? parseInt(yearEl.value, 10) : null,
+        target_books: parseInt(booksEl.value || 0, 10) || 0,
+        target_pages: parseInt(pagesEl.value || 0, 10) || 0,
+        progress,
+      };
+      try {
+        const res = await fetch('/api/goals', {
+          method: 'POST',
+          headers: (() => {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            const headers = { 'Content-Type': 'application/json' };
+            if (meta && meta.content) headers['X-CSRF-Token'] = meta.content;
+            return headers;
+          })(),
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          if (typeof window.biblioSaveGoals === 'function') window.biblioSaveGoals();
+          alert(_i18n('Goals saved!'));
+        } else {
+          console.error('Save goals failed:', await res.text());
+        }
+      } catch (err) {
+        console.error('Save goals error:', err);
+      }
+    });
+  }
+</script>
+{% endblock %}

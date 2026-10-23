@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    BiblioJules talks to self-hosted libraries on the local network, often over
+    plain HTTP. normalizeBaseUrl() upgrades public hostnames to HTTPS, but a
+    private address (192.168.x.x, 10.x.x.x, localhost) or a single-label
+    hostname deliberately stays on HTTP because those servers usually have no
+    certificate. Android blocks cleartext in release builds by default, so
+    permit it here; the app still prefers HTTPS everywhere else.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

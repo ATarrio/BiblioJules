@@ -26,10 +26,14 @@ from ..services import sync as sync_service
 from .catalog import CatalogView
 from .dashboard import DashboardView
 from .discover import DiscoverView
+from .import_view import ImportView
 from .locations_view import LocationsView
-from .repo import AuthError, LocalRepo, RemoteRepo, RepoError, current_repo, set_repo
+from .reading_view import ReadingView
+from .repo import AuthError, LocalRepo, RemoteRepo, Repo, RepoError, current_repo, set_repo
 from .settings_dialog import SettingsDialog
+from .settings_view import SettingsView
 from .statuses_view import StatusesView
+from .wantlist_view import WantlistView
 from .theme import LOGO_SVG, apply_theme
 from .workers import run_blocking
 
@@ -39,8 +43,12 @@ _PAGES = [
     ("🏠", "Dashboard"),
     ("📚", "Catalog"),
     ("🔍", "Discover"),
+    ("📖", "Reading stats"),
+    ("⭐", "Want-to-read list"),
+    ("📥", "Import"),
     ("📍", "Locations"),
     ("🏷️", "Statuses"),
+    ("⚙️", "Settings"),
 ]
 
 
@@ -123,9 +131,23 @@ class MainWindow(QMainWindow):
         self.dashboard = DashboardView(self.notify_change)
         self.catalog = CatalogView(self.notify_change)
         self.discover = DiscoverView(self.notify_change)
+        self.reading = ReadingView(self.notify_change)
+        self.wantlist = WantlistView(self.notify_change)
+        self.import_view = ImportView(self.notify_change)
         self.locations = LocationsView(self.notify_change)
         self.statuses = StatusesView(self.notify_change)
-        self._views = [self.dashboard, self.catalog, self.discover, self.locations, self.statuses]
+        self.settings_page = SettingsView(self._open_settings, self._sync_library)
+        self._views = [
+            self.dashboard,
+            self.catalog,
+            self.discover,
+            self.reading,
+            self.wantlist,
+            self.import_view,
+            self.locations,
+            self.statuses,
+            self.settings_page,
+        ]
         for view in self._views:
             self.stack.addWidget(view)
 
@@ -144,6 +166,13 @@ class MainWindow(QMainWindow):
         """Recreate the whole UI after a language or connection change."""
         current = self.stack.currentIndex() if hasattr(self, "stack") else 0
         self._ready = False
+        # ``clear()`` removes the actions but does not delete the menus (and
+        # their shortcuts), so a few language switches used to pile them up.
+        for action in list(self.menuBar().actions()):
+            menu = action.menu()
+            if menu is not None:
+                menu.deleteLater()
+            action.deleteLater()
         self.menuBar().clear()
         self._build_menu()
         self._build_ui()
@@ -197,46 +226,65 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             apply_theme(app, color_theme)
-        self._install_repo()
+        retired = self._install_repo()
         self._rebuild()
+        if retired is not None:
+            # Keep the old client alive briefly: a lookup or dashboard fetch
+            # started just before the switch may still be finishing.
+            QTimer.singleShot(5000, retired.close)
         if preferences.get_mode() == preferences.MODE_REMOTE and not preferences.get_api_token():
             # Still no token: put the user back in the dialog rather than leave
             # them staring at empty views.
             QTimer.singleShot(0, self._open_settings)
 
-    def _install_repo(self) -> None:
+    def _install_repo(self) -> RemoteRepo | None:
+        """Install the repo for the saved settings, returning any retired one.
+
+        The previous remote client is closed by the caller *after* the widgets
+        are rebuilt, so a request already in flight does not hit a closed pool.
+        A failure while preparing the new repo leaves the old one in place.
+        """
         previous = current_repo()
-        if isinstance(previous, RemoteRepo):
-            previous.close()
         if preferences.get_mode() == preferences.MODE_REMOTE:
-            set_repo(RemoteRepo(preferences.get_backend_url(), preferences.get_api_token()))
+            new_repo: Repo = RemoteRepo(
+                preferences.get_backend_url(), preferences.get_api_token()
+            )
         else:
             # Imported lazily so remote mode never opens the local SQLite file.
             from .db import initialize_database
 
             initialize_database()
-            set_repo(LocalRepo())
+            new_repo = LocalRepo()
+        set_repo(new_repo)
+        return previous if isinstance(previous, RemoteRepo) else None
 
     def _startup_check(self) -> None:
         repo = current_repo()
         if preferences.get_mode() == preferences.MODE_REMOTE and isinstance(repo, RemoteRepo):
-            needs_sign_in = False
             if not repo.token:
-                needs_sign_in = True
-            else:
-                try:
-                    repo.verify()
-                except AuthError:
-                    needs_sign_in = True
-                except RepoError as exc:
-                    self.statusBar().showMessage(str(exc), 8000)
-            if needs_sign_in:
                 self._ready = True
                 self._open_settings()
                 # Signed in? Then show the catalogue. Cancelled? Leave the views
                 # empty — the sidebar and status bar explain why.
                 self.refresh_all()
                 return
+            # Verifying reaches the network; keep the window responsive while
+            # it runs.
+            run_blocking(repo.verify, self._startup_verified, self._startup_failed)
+            return
+        self._ready = True
+        self.refresh_all()
+
+    def _startup_verified(self, _result: object = None) -> None:
+        self._ready = True
+        self.refresh_all()
+
+    def _startup_failed(self, message: str) -> None:
+        repo = current_repo()
+        self.statusBar().showMessage(message, 8000)
+        if isinstance(repo, RemoteRepo) and repo.token_rejected:
+            self._ready = True
+            self._open_settings()
         self._ready = True
         self.refresh_all()
 

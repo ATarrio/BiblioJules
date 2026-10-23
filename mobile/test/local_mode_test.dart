@@ -97,7 +97,10 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -115,10 +118,13 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Dashboard'));
+    await tester.tap(find.byIcon(Icons.dashboard_outlined));
     await tester.pumpAndSettle();
 
     expect(find.text('BY STATUS'), findsOneWidget);
@@ -128,16 +134,23 @@ void main() {
       () => container.read(dashboardProvider.future),
     );
     expect(data!.stats.total, 2);
-    expect(data.recent.map((book) => book.title), containsAll(['Dune', 'Ubik']));
+    expect(
+      data.recent.map((book) => book.title),
+      containsAll(['Dune', 'Ubik']),
+    );
   });
 
-  testWidgets('a book saved from the app lands in the local file',
-      (tester) async {
+  testWidgets('a book saved from the app lands in the local file', (
+    tester,
+  ) async {
     final container = await _bootLocal(tester, repo, signedIn: true);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -145,7 +158,10 @@ void main() {
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.widgetWithText(TextField, 'Title'), 'Neuromancer');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Title'),
+      'Neuromancer',
+    );
     // The form's Save lives in the app bar; the one at the bottom of the form
     // is below the fold and therefore never built.
     await tester.tap(find.byTooltip('Save'));
@@ -156,13 +172,17 @@ void main() {
     expect(stored!.map((book) => book.title), contains('Neuromancer'));
   });
 
-  testWidgets('signed out, the app offers to keep the library on the phone',
-      (tester) async {
+  testWidgets('signed out, the app offers to keep the library on the phone', (
+    tester,
+  ) async {
     final container = await _bootLocal(tester, repo, signedIn: false);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -170,13 +190,17 @@ void main() {
     expect(find.text('Sign in'), findsOneWidget);
   });
 
-  testWidgets('the settings screen names the library and offers a rename',
-      (tester) async {
+  testWidgets('the settings screen names the library and offers a rename', (
+    tester,
+  ) async {
     final container = await _bootLocal(tester, repo, signedIn: true);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
     // Settings lives behind the overflow menu.
@@ -191,10 +215,16 @@ void main() {
     expect(find.text('Rename'), findsOneWidget);
   });
 
-  testWidgets('the settings screen exports the library to the file picker',
-      (tester) async {
+  testWidgets('the settings screen exports the library to the file picker', (
+    tester,
+  ) async {
     await tester.runAsync(() async => repo.createBook({'title': 'Dune'}));
-    final container = await _bootLocal(tester, repo, signedIn: true, scratch: scratch);
+    final container = await _bootLocal(
+      tester,
+      repo,
+      signedIn: true,
+      scratch: scratch,
+    );
     addTearDown(container.dispose);
 
     // Stand in for Android: accept what Dart offers and say what was saved.
@@ -202,17 +232,20 @@ void main() {
     const channel = MethodChannel(kFilesChannel);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'export');
-      exportCall = call.arguments as Map<Object?, Object?>;
-      return 'Dune library.sqlite';
-    });
+          expect(call.method, 'export');
+          exportCall = call.arguments as Map<Object?, Object?>;
+          return 'Dune library.sqlite';
+        });
     addTearDown(
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null),
     );
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('More'));
@@ -226,13 +259,17 @@ void main() {
     // feature: a real snapshot of a real library went past the picker.
     expect(exportCall, isNotNull);
     expect(exportCall!['name'], startsWith('my-library-'));
-    expect(find.text('Library exported as Dune library.sqlite.'), findsOneWidget);
+    expect(
+      find.text('Library exported as Dune library.sqlite.'),
+      findsOneWidget,
+    );
     // Nothing is left behind in the scratch directory.
     expect(scratch.listSync(), isEmpty);
   });
 
-  testWidgets('the settings screen sends the library to a shared folder',
-      (tester) async {
+  testWidgets('the settings screen sends the library to a shared folder', (
+    tester,
+  ) async {
     final container = await _bootLocal(tester, repo, signedIn: true);
     addTearDown(container.dispose);
 
@@ -240,27 +277,30 @@ void main() {
     const channel = MethodChannel(kFilesChannel);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      switch (call.method) {
-        case 'pickSyncFolder':
-          return <Object?, Object?>{
-            'uri': 'content://tree/primary%3ABiblioJules',
-            'name': 'BiblioJules',
-          };
-        case 'syncFolderName':
-          return 'BiblioJules';
-        case 'syncPermission':
-          return true;
-        default:
-          return null;
-      }
-    });
+          switch (call.method) {
+            case 'pickSyncFolder':
+              return <Object?, Object?>{
+                'uri': 'content://tree/primary%3ABiblioJules',
+                'name': 'BiblioJules',
+              };
+            case 'syncFolderName':
+              return 'BiblioJules';
+            case 'syncPermission':
+              return true;
+            default:
+              return null;
+          }
+        });
     addTearDown(
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null),
     );
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const BiblioJulesApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const BiblioJulesApp(),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('More'));

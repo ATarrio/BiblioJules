@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:bibliojules_mobile/src/core/api_client.dart';
 import 'package:bibliojules_mobile/src/core/api_exception.dart';
+import 'package:bibliojules_mobile/src/core/models/models.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -11,7 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this.handler);
 
-  final Future<ResponseBody> Function(RequestOptions options, Object? body) handler;
+  final Future<ResponseBody> Function(RequestOptions options, Object? body)
+  handler;
 
   RequestOptions? request;
   Object? body;
@@ -25,8 +27,12 @@ class _FakeAdapter implements HttpClientAdapter {
     request = options;
     if (requestStream != null) {
       final chunks = await requestStream.toList();
-      final text = utf8.decode(chunks.expand((chunk) => chunk).toList());
-      body = text.isEmpty ? null : json.decode(text);
+      final bytes = chunks.expand((chunk) => chunk).toList();
+      final text = utf8.decode(bytes, allowMalformed: true);
+      final contentType = options.contentType ?? '';
+      body = contentType.contains('json') && text.isNotEmpty
+          ? json.decode(text)
+          : bytes;
     } else {
       body = null;
     }
@@ -73,7 +79,10 @@ void main() {
     });
 
     test('assumes https for a public host and http for a private one', () {
-      expect(normalizeBaseUrl('library.example.com'), 'https://library.example.com');
+      expect(
+        normalizeBaseUrl('library.example.com'),
+        'https://library.example.com',
+      );
       expect(normalizeBaseUrl('localhost:8000'), 'http://localhost:8000');
       expect(normalizeBaseUrl('127.0.0.1:8000'), 'http://127.0.0.1:8000');
       expect(normalizeBaseUrl('10.0.2.2:8000'), 'http://10.0.2.2:8000');
@@ -99,11 +108,20 @@ void main() {
           _json({
             'token': 'bj_abc',
             'expires_at': '2026-01-01T00:00:00+00:00',
-            'user': {'id': 1, 'username': 'ana', 'role': 'admin', 'is_admin': true},
+            'user': {
+              'id': 1,
+              'username': 'ana',
+              'role': 'admin',
+              'is_admin': true,
+            },
           }, 200),
         ),
       );
-      final result = await api.login(username: 'ana', password: 'secret', label: 'Test');
+      final result = await api.login(
+        username: 'ana',
+        password: 'secret',
+        label: 'Test',
+      );
       expect(result.token, 'bj_abc');
       expect(result.user.username, 'ana');
       expect(result.user.isAdmin, isTrue);
@@ -137,7 +155,8 @@ void main() {
   group('tokens and headers', () {
     test('sends the bearer token once it has one', () async {
       final (api, adapter) = _client(
-        (options, body) => Future.value(_json({'id': 1, 'username': 'ana'}, 200)),
+        (options, body) =>
+            Future.value(_json({'id': 1, 'username': 'ana'}, 200)),
         token: 'bj_abc',
       );
       await api.me();
@@ -185,10 +204,7 @@ void main() {
       final (api, _) = _client(
         (options, body) => Future.value(_json({'detail': 'Not found.'}, 404)),
       );
-      await expectLater(
-        api.getBook(999),
-        throwsA(isA<ApiNotFoundException>()),
-      );
+      await expectLater(api.getBook(999), throwsA(isA<ApiNotFoundException>()));
     });
 
     test('lookups treat 404 as "no such book"', () async {
@@ -231,8 +247,16 @@ void main() {
         (options, body) => Future.value(
           _json({
             'items': [
-              {'id': 1, 'title': 'Dune', 'authors': ['Frank Herbert']},
-              {'id': 2, 'title': 'Dune Messiah', 'authors': ['Frank Herbert']},
+              {
+                'id': 1,
+                'title': 'Dune',
+                'authors': ['Frank Herbert'],
+              },
+              {
+                'id': 2,
+                'title': 'Dune Messiah',
+                'authors': ['Frank Herbert'],
+              },
             ],
           }, 200),
         ),
@@ -254,6 +278,8 @@ void main() {
         'saga': 'Dune',
         'sort': 'title',
         'dir': 'asc',
+        'limit': 500,
+        'offset': 0,
       });
     });
 
@@ -262,13 +288,44 @@ void main() {
         (options, body) => Future.value(_json({'items': []}, 200)),
       );
       await api.listBooks(sort: 'recent');
-      expect(adapter.request?.queryParameters, {'sort': 'recent'});
+      expect(adapter.request?.queryParameters, {
+        'sort': 'recent',
+        'limit': 500,
+        'offset': 0,
+      });
+    });
+
+    test('listBooks walks every page a paginated server returns', () async {
+      var calls = 0;
+      final (api, _) = _client((options, body) {
+        calls += 1;
+        final offset = options.queryParameters['offset'] as int;
+        return Future.value(
+          _json({
+            'count': 2,
+            'items': [
+              {
+                'id': offset + 1,
+                'title': offset == 0 ? 'Dune' : 'Dune Messiah',
+                'authors': ['Frank Herbert'],
+              },
+            ],
+          }, 200),
+        );
+      });
+      final books = await api.listBooks();
+      expect(books.map((book) => book.id), [1, 2]);
+      expect(calls, 2);
     });
 
     test('createBook posts the payload', () async {
       final (api, adapter) = _client(
         (options, body) => Future.value(
-          _json({'id': 5, 'title': 'Dune', 'authors': ['Frank Herbert']}, 201),
+          _json({
+            'id': 5,
+            'title': 'Dune',
+            'authors': ['Frank Herbert'],
+          }, 201),
         ),
       );
       final book = await api.createBook({'title': 'Dune', 'score': 4.5});
@@ -375,7 +432,8 @@ void main() {
   group('lookups', () {
     test('an ISBN lookup that finds nothing returns null', () async {
       final (api, _) = _client(
-        (options, body) => Future.value(_json({'detail': 'No book found.'}, 404)),
+        (options, body) =>
+            Future.value(_json({'detail': 'No book found.'}, 404)),
       );
       expect(await api.lookupIsbn('123'), isNull);
     });
@@ -384,13 +442,110 @@ void main() {
       final (api, adapter) = _client(
         (options, body) => Future.value(
           _json([
-            {'title': 'Dune', 'authors': ['Frank Herbert']},
+            {
+              'title': 'Dune',
+              'authors': ['Frank Herbert'],
+            },
           ], 200),
         ),
       );
       final results = await api.searchBooks('dune', limit: 5);
       expect(results.single.title, 'Dune');
       expect(adapter.request?.queryParameters, {'q': 'dune', 'limit': 5});
+    });
+  });
+
+  group('reading data', () {
+    test('reads and writes goals', () async {
+      final (api, adapter) = _client((options, body) {
+        if (options.method == 'POST') {
+          return Future.value(_json({'ok': true}, 200));
+        }
+        return Future.value(
+          _json({
+            'year': 2026,
+            'target_books': 12,
+            'target_pages': 3000,
+            'progress': {'books_read': 2},
+          }, 200),
+        );
+      });
+
+      final goals = await api.readingGoals();
+      expect(goals.year, 2026);
+      expect(goals.targetBooks, 12);
+      await api.saveReadingGoals(
+        const ReadingGoals(year: 2027, targetBooks: 20, targetPages: 5000),
+      );
+      expect(adapter.request?.path, '/api/goals');
+      expect(adapter.request?.method, 'POST');
+      expect(adapter.body, {
+        'year': 2027,
+        'target_books': 20,
+        'target_pages': 5000,
+        'progress': <String, dynamic>{},
+      });
+    });
+
+    test('reads and changes the want list', () async {
+      final (api, adapter) = _client((options, body) {
+        if (options.method == 'GET') {
+          return Future.value(
+            _json([
+              {'id': 'want-1', 'title': 'Ubik', 'authors': 'Philip K. Dick'},
+            ], 200),
+          );
+        }
+        return Future.value(_json({'ok': true}, 200));
+      });
+
+      final entries = await api.wantList();
+      expect(entries.single.title, 'Ubik');
+      await api.addWant(const WantEntry(id: 'want-2', title: 'Dune'));
+      expect(adapter.request?.path, '/api/wantlist');
+      expect(adapter.body, containsPair('title', 'Dune'));
+      await api.removeWant('want-2');
+      expect(adapter.request?.path, '/api/wantlist/want-2');
+      expect(adapter.request?.method, 'DELETE');
+    });
+
+    test('makes server cover URLs absolute', () async {
+      final (api, _) = _client(
+        (options, body) => Future.value(
+          _json({
+            'items': [
+              {'id': 1, 'title': 'Dune', 'cover_url': '/covers/dune.png'},
+            ],
+            'count': 1,
+          }, 200),
+        ),
+      );
+      final books = await api.listBooks();
+      expect(
+        books.single.coverUrl,
+        'https://library.example.com/covers/dune.png',
+      );
+    });
+
+    test('uploads a cover as multipart and reads the updated book', () async {
+      final (api, adapter) = _client(
+        (options, body) => Future.value(
+          _json({
+            'id': 1,
+            'title': 'Dune',
+            'cover_url': '/covers/dune.png',
+          }, 200),
+        ),
+      );
+      final book = await api.uploadCover(
+        1,
+        filename: 'cover.png',
+        bytes: [0x89, 0x50, 0x4E, 0x47],
+      );
+      expect(adapter.request?.path, '/api/books/1/cover');
+      expect(adapter.request?.method, 'POST');
+      expect(adapter.request?.contentType, contains('multipart/form-data'));
+      expect(book.coverUrl, 'https://library.example.com/covers/dune.png');
     });
   });
 }
