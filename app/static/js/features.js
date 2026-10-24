@@ -131,7 +131,7 @@
         `<div class="space-y-3">` +
         `<div class="flex items-center justify-between text-sm">` +
         `<span class="font-semibold text-slate-900 dark:text-white">${escapeHtml(year)}</span>` +
-        `<button type="button" class="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium" data-goal-year="${goal.year}">🗑️</button>` +
+        `<button type="button" class="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium" data-goal-year="${escapeHtml(goal.year)}">🗑️</button>` +
         `</div>`;
       if (bookTarget) {
         block +=

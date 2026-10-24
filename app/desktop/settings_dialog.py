@@ -231,6 +231,9 @@ class SettingsDialog(QDialog):
         if self._closed:
             return
         self.sign_in_btn.setEnabled(self.mode.currentData() == preferences.MODE_REMOTE)
+        # A failed attempt must not leave the typed password sitting in the
+        # field; the user retypes it when they try again.
+        self.password.clear()
         self.message.setText(message)
 
     def _signed_in(self, payload: object, url: str, username: str) -> None:

@@ -21,6 +21,12 @@ from typing import Any
 
 from .isbn_lookup import http_client, lookup_isbn, normalize_isbn
 
+#: One ISBN lookup is a full HTTP round-trip against Open Library; a huge
+#: upload must not chain thousands of awaited lookups (each with its own
+#: timeout) while holding a DB session, so only the first rows still missing
+#: metadata get enriched — the rest keep exactly what the CSV had.
+MAX_ENRICH_LOOKUPS = 200
+
 
 def parse_import_csv(text: str, delimiter: str = ",") -> list[dict]:
     """Parse CSV text and return a list of row dicts with standardised keys."""
@@ -116,8 +122,14 @@ def parse_import_csv(text: str, delimiter: str = ",") -> list[dict]:
 async def _enrich_with(rows: list[dict], client, db=None) -> list[dict]:
     """The per-row work, sharing one HTTP client for the whole batch."""
     enriched = []
+    lookups = 0
     for row in rows:
-        if row.get("isbn") and (not row.get("title") or not row.get("authors")):
+        if (
+            row.get("isbn")
+            and (not row.get("title") or not row.get("authors"))
+            and lookups < MAX_ENRICH_LOOKUPS
+        ):
+            lookups += 1
             lookup = await lookup_isbn(row["isbn"], client=client)
             if lookup:
                 if not row.get("title") and lookup.get("title"):

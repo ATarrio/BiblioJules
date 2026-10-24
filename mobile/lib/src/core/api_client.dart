@@ -72,6 +72,12 @@ class ApiClient implements LibraryRepo {
               sendTimeout: const Duration(seconds: 20),
               receiveTimeout: const Duration(seconds: 30),
               headers: {'Accept': 'application/json'},
+              // The interceptor below attaches the Authorization header to
+              // every request; dart:io would replay it on redirects, even to
+              // another origin. The API never redirects, so refuse the hop
+              // instead of leaking the bearer token to the redirect target.
+              followRedirects: false,
+              maxRedirects: 0,
             ),
           ) {
     _dio.interceptors.add(

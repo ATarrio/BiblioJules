@@ -109,6 +109,23 @@ def normalize_color(value: str | None, default: str = "#64748b") -> str:
     return candidate if _HEX_COLOUR.match(candidate) else default
 
 
+def safe_cover_url(value: str | None) -> str | None:
+    """Keep only http(s) URLs and app-local ``/covers/`` paths.
+
+    Covers are rendered as ``<img src>``, so a stored URL with a surprising
+    scheme (``javascript:``, ``data:``, protocol-relative...) must never make
+    it into a book row; such values are dropped.
+    """
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    if candidate.startswith("/covers/"):
+        return candidate  # locally uploaded covers, served from our own origin
+    if candidate.startswith(("http://", "https://")):
+        return candidate
+    return None
+
+
 def _check_reference(db: Session, model, value, message: str) -> int | None:
     """Validate an optional foreign key coming from a form or API payload."""
     if value in (None, "", "none", "null"):
@@ -139,7 +156,13 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
                   "cover_url", "notes", "source"):
         if field in data:
             value = data.get(field)
-            setattr(book, field, value.strip() if isinstance(value, str) else value)
+            if field == "cover_url":
+                # Covers reach the page as ``<img src>``: keep only http(s)
+                # and our own ``/covers/...`` paths.
+                value = safe_cover_url(value)
+            elif isinstance(value, str):
+                value = value.strip()
+            setattr(book, field, value)
 
     # ``published_date`` is the one field the user edits. ``published_year`` is
     # a cached projection of it, kept only so sorting stays a simple indexed
@@ -300,15 +323,18 @@ def query_books(
     stmt = select(Book).options(*BOOK_LOAD_OPTIONS)
 
     if search:
-        term = f"%{search.strip()}%"
+        # LIKE wildcards in the query must match as text, not as operators:
+        # escape them so ``%`` or ``a_b`` behave literally.
+        safe = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        term = f"%{safe}%"
         stmt = stmt.outerjoin(Book.authors).outerjoin(Book.publisher)
         stmt = stmt.where(
             or_(
-                Book.title.ilike(term),
-                Book.subtitle.ilike(term),
-                Book.isbn.ilike(term),
-                Author.name.ilike(term),
-                Publisher.name.ilike(term),
+                Book.title.ilike(term, escape="\\"),
+                Book.subtitle.ilike(term, escape="\\"),
+                Book.isbn.ilike(term, escape="\\"),
+                Author.name.ilike(term, escape="\\"),
+                Publisher.name.ilike(term, escape="\\"),
             )
         ).distinct()
 
@@ -320,8 +346,11 @@ def query_books(
         stmt = stmt.join(Book.authors).where(Author.id == author_id).distinct()
     if location_id:
         location = db.get(Location, location_id)
-        if location:
-            stmt = stmt.where(Book.location_id.in_(location.descendant_ids()))
+        if location is None:
+            # A deleted location must match nothing — skipping the filter
+            # would silently show the whole catalog instead.
+            return []
+        stmt = stmt.where(Book.location_id.in_(location.descendant_ids()))
     if saga:
         stmt = stmt.where(func.lower(Book.saga) == saga.strip().lower())
     if read_status:

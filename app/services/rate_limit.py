@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from typing import Iterable
 
 _WINDOW_SECONDS = 15 * 60
 _MAX_FAILURES = 5
+#: Keys mix in attacker-supplied usernames, so the map must stay bounded:
+#: buckets whose failures all left the window are dropped, and the map
+#: refuses to grow past this many live keys.
+_MAX_KEYS = 10_000
 
 _lock = threading.Lock()
-_failures: dict[str, deque[float]] = defaultdict(deque)
+_failures: dict[str, deque[float]] = {}
 
 
 def client_key(request) -> str:
@@ -33,6 +37,16 @@ def client_key(request) -> str:
 def _prune(bucket: deque[float], now: float) -> None:
     while bucket and now - bucket[0] > _WINDOW_SECONDS:
         bucket.popleft()
+
+
+def _evict_expired(now: float) -> None:
+    """Forget whole buckets whose failures have all left the window."""
+    for key in [
+        key
+        for key, bucket in _failures.items()
+        if not bucket or now - bucket[-1] > _WINDOW_SECONDS
+    ]:
+        del _failures[key]
 
 
 def retry_after(keys: Iterable[str], *, limit: int = _MAX_FAILURES) -> int:
@@ -53,8 +67,17 @@ def retry_after(keys: Iterable[str], *, limit: int = _MAX_FAILURES) -> int:
 def record_failure(keys: Iterable[str]) -> None:
     now = time.monotonic()
     with _lock:
+        if len(_failures) >= _MAX_KEYS:
+            # Buckets are keyed by attacker-supplied usernames: drop the ones
+            # that can no longer influence the answer before growing the map.
+            _evict_expired(now)
         for key in keys:
-            bucket = _failures[key]
+            bucket = _failures.get(key)
+            if bucket is None:
+                if len(_failures) >= _MAX_KEYS:
+                    continue  # saturated map: the limiter stays best-effort
+                bucket = deque()
+                _failures[key] = bucket
             _prune(bucket, now)
             bucket.append(now)
 

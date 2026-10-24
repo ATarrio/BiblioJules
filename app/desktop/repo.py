@@ -407,7 +407,11 @@ class RemoteRepo(Repo):
         self.token = (token or "").strip()
         #: Set when the server has rejected our token, so the UI can say so.
         self.token_rejected = False
-        self._client = httpx.Client(timeout=DEFAULT_TIMEOUT, follow_redirects=True)
+        # Never follow redirects while credentials are attached: httpx replays
+        # the Authorization header to redirect targets — even cross-origin ones —
+        # which hands the bearer token to whatever the redirect points at. This
+        # API does not redirect, so a hop should fail rather than be followed.
+        self._client = httpx.Client(timeout=DEFAULT_TIMEOUT, follow_redirects=False)
 
     @property
     def description(self) -> str:
@@ -645,7 +649,9 @@ def login(base_url: str, username: str, password: str, *, label: str | None = No
         "label": label or device_label(),
     }
     try:
-        with httpx.Client(timeout=DEFAULT_TIMEOUT, follow_redirects=True) as client:
+        # A redirect would replay this username/password body to another
+        # origin; this API does not redirect, so do not follow hops.
+        with httpx.Client(timeout=DEFAULT_TIMEOUT, follow_redirects=False) as client:
             response = client.post(f"{base}/api/auth/login", json=payload)
     except httpx.HTTPError as exc:
         raise ConnectionFailure(

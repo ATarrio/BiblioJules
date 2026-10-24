@@ -66,6 +66,10 @@ const List<String> _statusFields = <String>[
   'is_default',
 ];
 
+/// Colours a snapshot status row may carry: the same ``#rgb``/``#rrggbb``
+/// shapes the web templates paste into a ``style`` attribute.
+const RegExp _hexColor = RegExp(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');
+
 const List<String> _locationFields = <String>['name', 'kind', 'description'];
 
 const List<String> _bookFields = <String>[
@@ -676,6 +680,23 @@ Future<void> _applyRemoteTombstones(
   }
 }
 
+/// Re-check snapshot status fields that reach inline CSS before they enter
+/// the table: ``color`` is written straight into a ``style`` attribute by the
+/// web templates, and a tampered shared snapshot must not smuggle arbitrary
+/// CSS (or an oversized icon) through the merge.
+Map<String, Object?> _sanitizeStatusFields(Map<String, Object?> values) {
+  final safe = <String, Object?>{...values};
+  if (safe.containsKey('color')) {
+    final color = safe['color'];
+    final valid = color is String && _hexColor.matchEntire(color) != null;
+    safe['color'] = valid ? color : '#64748b';
+  }
+  if (safe['icon'] is String && (safe['icon'] as String).length > 16) {
+    safe['icon'] = null;
+  }
+  return safe;
+}
+
 /// Merge statuses by ``sync_id``, then by slug/name so the seeded rows unify.
 Future<Map<String, int>> _mergeStatuses(
   DatabaseExecutor db,
@@ -705,12 +726,12 @@ Future<Map<String, int>> _mergeStatuses(
     local ??= byName['${remote['name'] ?? ''}'.toLowerCase()];
 
     if (local == null) {
-      final values = <String, Object?>{
+      final values = _sanitizeStatusFields(<String, Object?>{
         for (final field in _statusFields) field: remote[field],
         'sync_id': syncId,
         'created_at': remote['created_at'],
         'updated_at': remote['updated_at'],
-      };
+      });
       final newId = await _insert(db, 'statuses', values);
       final inserted = <String, Object?>{...values, 'id': newId};
       bySync[syncId] = inserted;
@@ -727,11 +748,11 @@ Future<Map<String, int>> _mergeStatuses(
     }
     bySync[syncId] = local;
     if (_newer(remote, local)) {
-      final values = <String, Object?>{
+      final values = _sanitizeStatusFields(<String, Object?>{
         for (final field in _statusFields)
           if (remote[field] != local[field]) field: remote[field],
         'updated_at': remote['updated_at'],
-      };
+      });
       await _update(db, 'statuses', local['id']! as int, values);
       if (_conflict(since, remote, local)) {
         summary.conflicts.add(

@@ -46,6 +46,11 @@ from urllib.parse import quote
 
 from ..config import settings
 
+# The colour rules live with the library (one status writer, one validator):
+# a snapshot arriving from a shared folder is re-checked through the very same
+# normalize_color before its rows are merged.
+from .library import normalize_color
+
 #: Bumped if the layout of a snapshot (not the library schema) ever changes.
 FORMAT = 1
 
@@ -366,6 +371,11 @@ def resolve_target(value: str | Path | None = None, *, db_path: Path | None = No
         target = path / SNAPSHOT_NAME
     if not target.parent.is_dir():
         raise SyncError(f"The shared folder does not exist: {target.parent}")
+    data_path = Path(db_path) if db_path is not None else database_path()
+    if target.resolve() == data_path.resolve():
+        # Publishing runs ``VACUUM INTO`` plus ``os.replace``: pointing the
+        # shared file at this very library would overwrite the live database.
+        raise SyncError("The shared library file cannot be this library itself.")
     return target
 
 
@@ -879,6 +889,22 @@ def _apply_remote_tombstones(
             summary.bump(summary.deleted, "locations")
 
 
+def _sanitize_status_row(values: dict) -> dict:
+    """Re-check fields that reach inline CSS before they enter the table.
+
+    A snapshot comes from a shared folder — the one artifact of this design
+    that crosses a trust boundary — so a tampered file must not smuggle
+    arbitrary CSS through ``status.color`` (the templates write it straight
+    into a ``style`` attribute) or an over-long ``icon``.
+    """
+    values = dict(values)
+    if "color" in values:
+        values["color"] = normalize_color(values.get("color"))
+    if "icon" in values and isinstance(values["icon"], str):
+        values["icon"] = values["icon"][:16]
+    return values
+
+
 def _merge_statuses(
     connection: sqlite3.Connection,
     remote_rows: list[dict],
@@ -902,7 +928,12 @@ def _merge_statuses(
         if local is None:
             local = by_name.get((remote.get("name") or "").casefold())
         if local is None:
-            values = {name: remote.get(name) for name in (*STATUS_FIELDS, "sync_id", "created_at", "updated_at")}
+            values = _sanitize_status_row(
+                {
+                    name: remote.get(name)
+                    for name in (*STATUS_FIELDS, "sync_id", "created_at", "updated_at")
+                }
+            )
             new_id = _insert(connection, "statuses", values)
             inserted = dict(values, id=new_id)
             by_sync[sync_id] = inserted
@@ -919,7 +950,13 @@ def _merge_statuses(
         if _newer(remote, local):
             # Adopt the winner's timestamp too, so the next device to merge
             # sees one consistent version rather than two timestamps.
-            values = {name: remote.get(name) for name in STATUS_FIELDS if remote.get(name) != local.get(name)}
+            values = _sanitize_status_row(
+                {
+                    name: remote.get(name)
+                    for name in STATUS_FIELDS
+                    if remote.get(name) != local.get(name)
+                }
+            )
             values["updated_at"] = remote.get("updated_at")
             _update(connection, "statuses", local["id"], values)
             if _conflict(since, remote, local):
