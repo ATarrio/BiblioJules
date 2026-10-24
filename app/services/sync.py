@@ -488,6 +488,9 @@ def export_snapshot(
             connection.execute("DROP TABLE IF EXISTS users")
             connection.execute("DROP TABLE IF EXISTS tokens")
             connection.execute("DROP TABLE IF EXISTS sync_meta")
+            # Objectives are per-device/per-account metadata: they never travel
+            # through a cross-device merge, so a snapshot must not carry them.
+            connection.execute("DROP TABLE IF EXISTS reading_goals")
             connection.execute(
                 "CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )

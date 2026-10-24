@@ -1,10 +1,13 @@
-"""Personal reading stats and goals, stored as local JSON files in ``data/``.
+"""Personal reading stats and objectives.
 
-These are *local-only*: they live next to the SQLite database but are never
-included in the cross-device sync snapshot (``bibliojules-library.sqlite``
-contains no accounts and no personal metadata).  Each device keeps its own stats
-and goals; they simply don't travel when the library is merged from another
-machine.
+These are *local-only*: they are never included in the cross-device sync
+snapshot (``bibliojules-library.sqlite`` contains no accounts and no personal
+metadata).  Each device keeps its own stats and objectives; they simply don't
+travel when the library is merged from another machine.
+
+Stats are computed from the shared library on each read.  Objectives now live in
+the ``reading_goals`` table rather than a side JSON file, so the single-file
+``.sqlite`` export carries them and a reinstalled app gets them back.
 
 The web dashboard reaches them via the JSON API (``/api/personal-stats`` etc.);
 the desktop app talks to the same endpoints (remote mode) or reads the files
@@ -218,41 +221,166 @@ def save_stats_file(stats: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Goals
+# Goals — stored in the ``reading_goals`` table, scoped by account
 # --------------------------------------------------------------------------- #
+#
+# Objectives live in the database (not a side JSON file) so the single-file
+# ``.sqlite`` export carries them and a reinstalled app gets them back. They are
+# still kept out of the cross-device sync merge (see ``app/services/sync.py``).
+# Progress is tracked per objective (``books_done`` / ``pages_done``), bumped
+# whenever a book is marked read in that objective's year — never the all-time
+# count of read books, which stays on the dashboard.
+
+from sqlalchemy import select
+
+from ..models import ReadingGoal
 
 
-def load_goals(user_id: int | None = None) -> dict:
-    """Return the goals dict for ``user_id`` (or the offline device)."""
-    data = _read_scoped(
-        GOALS_FILE,
-        {"year": None, "target_books": 0, "target_pages": 0, "progress": {}},
-        user_id,
-    )
-    if not isinstance(data, dict):
-        data = {}
-    progress = data.get("progress")
+def _scope(user_id: int | None):
+    """Rows belonging to ``user_id`` (or the offline device when ``None``)."""
+    if user_id is None:
+        return ReadingGoal.user_id.is_(None)
+    return ReadingGoal.user_id == user_id
+
+
+def _year_clause(year: int | None):
+    """Match an objective's year, where ``None`` means "any year"."""
+    if year is None:
+        return ReadingGoal.year.is_(None)
+    return ReadingGoal.year == year
+
+
+def _goal_dict(goal: ReadingGoal) -> dict:
+    """Serialize one objective row to its API shape."""
     return {
-        "year": _as_int(data.get("year"), 0) or None,
-        "target_books": _as_int(data.get("target_books")),
-        "target_pages": _as_int(data.get("target_pages")),
-        "progress": dict(progress) if isinstance(progress, dict) else {},
+        "year": goal.year,
+        "target_books": goal.target_books or 0,
+        "target_pages": goal.target_pages or 0,
+        "books_done": goal.books_done or 0,
+        "pages_done": goal.pages_done or 0,
     }
 
 
-def save_goals(goals: dict, user_id: int | None = None) -> None:
-    """Replace the goals dict for ``user_id`` (or the offline device)."""
-    if not isinstance(goals, dict):
-        goals = {}
-    progress = goals.get("progress")
-    clean = {
-        "year": _as_int(goals.get("year"), 0) or None,
-        "target_books": _as_int(goals.get("target_books")),
-        "target_pages": _as_int(goals.get("target_pages")),
-        "progress": dict(progress) if isinstance(progress, dict) else {},
-    }
-    with _file_lock(_scoped_path(GOALS_FILE, user_id)):
-        _write_scoped(GOALS_FILE, clean, user_id)
+def _has_target(goal: ReadingGoal) -> bool:
+    """An objective counts as set only when it has a target to aim at."""
+    return bool((goal.target_books or 0) or (goal.target_pages or 0))
+
+
+def load_goals(db, user_id: int | None = None) -> list[dict]:
+    """Return the reading objectives for ``user_id`` (or the offline device).
+
+    Each objective is a ``{year, target_books, target_pages, books_done,
+    pages_done}`` dict. A legacy ``goals.json`` file is migrated into the table
+    once, on the first read for a scope that has no rows yet.
+    """
+    _migrate_legacy_goals(db, user_id)
+    rows = db.scalars(select(ReadingGoal).where(_scope(user_id))).all()
+    return [_goal_dict(g) for g in rows if _has_target(g)]
+
+
+def save_goals(db, goal: dict, user_id: int | None = None) -> None:
+    """Add or replace one reading objective, keyed by its year.
+
+    Saving an objective for a year replaces any existing objective for that
+    same year, so a year never shows up twice. An objective with no target is
+    dropped, which lets callers clear a year by saving an empty one. A brand-new
+    objective starts at zero progress; the per-goal counter only moves when a
+    book is actually marked read.
+    """
+    year = _as_int(goal.get("year"), 0) or None
+    target_books = _as_int(goal.get("target_books"))
+    target_pages = _as_int(goal.get("target_pages"))
+    # A re-save keeps any progress the existing row for this year already had.
+    existing = db.scalars(
+        select(ReadingGoal).where(_scope(user_id) & _year_clause(year))
+    ).first()
+    books_done = existing.books_done if existing else 0
+    pages_done = existing.pages_done if existing else 0
+    if existing is not None:
+        db.delete(existing)
+        db.flush()
+    if target_books or target_pages:
+        db.add(
+            ReadingGoal(
+                user_id=user_id,
+                year=year,
+                target_books=target_books,
+                target_pages=target_pages,
+                books_done=books_done,
+                pages_done=pages_done,
+            )
+        )
+    db.commit()
+
+
+def remove_goals(db, year: int | None, user_id: int | None = None) -> None:
+    """Delete the objective for ``year`` (``None`` = the "any year" objective)."""
+    for goal in db.scalars(
+        select(ReadingGoal).where(_scope(user_id) & _year_clause(year))
+    ).all():
+        db.delete(goal)
+    db.commit()
+
+
+def record_read(db, user_id: int | None = None, pages: int = 0) -> None:
+    """Count a book marked read, toward the objective for the current year.
+
+    A mark-read bumps the objective whose year is the current calendar year,
+    and also any "any year" objective (``year IS NULL``). Progress is per
+    objective, so this never touches the all-time dashboard count.
+    """
+    from datetime import date
+
+    year = date.today().year
+    rows = db.scalars(
+        select(ReadingGoal).where(
+            _scope(user_id) & ((ReadingGoal.year == year) | ReadingGoal.year.is_(None))
+        )
+    ).all()
+    for goal in rows:
+        goal.books_done = (goal.books_done or 0) + 1
+        goal.pages_done = (goal.pages_done or 0) + max(0, pages)
+    db.commit()
+
+
+def _migrate_legacy_goals(db, user_id: int | None) -> None:
+    """Move a device's old ``goals.json`` into the table, once."""
+    path = _scoped_path(GOALS_FILE, user_id)
+    if not path.exists():
+        return
+    if db.scalars(select(ReadingGoal).where(_scope(user_id))).first() is not None:
+        # Already migrated (or the user set goals directly): leave the file alone.
+        return
+    data = _load_json(path, [])
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        data = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        year = _as_int(item.get("year"), 0) or None
+        target_books = _as_int(item.get("target_books"))
+        target_pages = _as_int(item.get("target_pages"))
+        if not (target_books or target_pages):
+            continue
+        progress = item.get("progress")
+        progress = progress if isinstance(progress, dict) else {}
+        db.add(
+            ReadingGoal(
+                user_id=user_id,
+                year=year,
+                target_books=target_books,
+                target_pages=target_pages,
+                books_done=_as_int(progress.get("books_read")),
+                pages_done=_as_int(progress.get("pages_read")),
+            )
+        )
+    db.commit()
+    try:
+        path.unlink()
+    except OSError:  # pragma: no cover
+        pass
 
 
 # --------------------------------------------------------------------------- #

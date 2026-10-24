@@ -20,7 +20,10 @@ library;
 /// * 1 — the first release of local mode.
 /// * 2 — the shared-library columns: ``sync_id`` and ``updated_at`` on every
 ///   synced row, and ``sync_tombstones`` for deletions.
-const int kLibrarySchemaVersion = 2;
+/// * 3 — ``reading_goals``: reading objectives move from a side JSON file into
+///   the database, so the single-file export carries them and a reinstalled app
+///   gets its objectives back.
+const int kLibrarySchemaVersion = 3;
 
 /// Every table and index, in creation order.
 ///
@@ -141,6 +144,19 @@ const List<String> kLibrarySchemaStatements = <String>[
   'CREATE INDEX ix_loans_book_id ON loans (book_id)',
   'CREATE UNIQUE INDEX ix_loans_sync_id ON loans (sync_id)',
   '''
+  CREATE TABLE reading_goals (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    year INTEGER,
+    target_books INTEGER,
+    target_pages INTEGER,
+    books_done INTEGER,
+    pages_done INTEGER
+  )
+  ''',
+  'CREATE INDEX ix_reading_goals_user_id ON reading_goals (user_id)',
+  'CREATE INDEX ix_reading_goals_year ON reading_goals (year)',
+  '''
   CREATE TABLE sync_tombstones (
     table_name VARCHAR(40) NOT NULL,
     sync_id VARCHAR(32) NOT NULL,
@@ -199,6 +215,27 @@ const List<String> kSyncMigrationStatements = <String>[
     PRIMARY KEY (table_name, sync_id)
   )
   ''',
+];
+
+/// The statements that upgrade a version-2 library to version 3.
+///
+/// Reading objectives used to be a side JSON file; they now live in a table so
+/// the single-file export carries them. The table is independent (no foreign
+/// keys), so creating it on an existing library is all the migration needs.
+const List<String> kGoalsMigrationStatements = <String>[
+  '''
+  CREATE TABLE IF NOT EXISTS reading_goals (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    year INTEGER,
+    target_books INTEGER,
+    target_pages INTEGER,
+    books_done INTEGER,
+    pages_done INTEGER
+  )
+  ''',
+  'CREATE INDEX IF NOT EXISTS ix_reading_goals_user_id ON reading_goals (user_id)',
+  'CREATE INDEX IF NOT EXISTS ix_reading_goals_year ON reading_goals (year)',
 ];
 
 /// The system statuses a brand-new library starts with.

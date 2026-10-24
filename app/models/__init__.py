@@ -9,6 +9,7 @@ from __future__ import annotations
 from .associations import book_authors
 from .author import Author
 from .book import Book
+from .goals import ReadingGoal
 from .loan import Loan
 from .location import Location
 from .publisher import Publisher
@@ -28,4 +29,5 @@ __all__ = [
     "Token",
     "User",
     "book_authors",
+    "ReadingGoal",
 ]

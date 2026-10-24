@@ -682,7 +682,7 @@ final readingStatsProvider = FutureProvider<ReadingStats>(
   isAutoDispose: true,
 );
 
-final readingGoalsProvider = FutureProvider<ReadingGoals>(
+final readingGoalsProvider = FutureProvider<List<ReadingGoals>>(
   (ref) {
     ref.watch(sessionKeyProvider);
     return ref.watch(repoProvider).readingGoals();

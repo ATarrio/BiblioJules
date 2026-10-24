@@ -118,12 +118,15 @@ class _FakeServer implements HttpClientAdapter {
         },
       };
     } else if (path == '/api/goals') {
-      body = {
-        'year': 2026,
-        'target_books': 12,
-        'target_pages': 3000,
-        'progress': {},
-      };
+      body = [
+        {
+          'year': 2026,
+          'target_books': 12,
+          'target_pages': 3000,
+          'books_done': 2,
+          'pages_done': 500,
+        },
+      ];
     } else if (path == '/api/wantlist') {
       body = [
         {

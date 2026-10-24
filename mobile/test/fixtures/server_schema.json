@@ -65,6 +65,15 @@
       "sync_id",
       "updated_at"
     ],
+    "reading_goals": [
+      "id",
+      "user_id",
+      "year",
+      "target_books",
+      "target_pages",
+      "books_done",
+      "pages_done"
+    ],
     "statuses": [
       "id",
       "name",

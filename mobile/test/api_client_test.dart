@@ -462,18 +462,22 @@ void main() {
           return Future.value(_json({'ok': true}, 200));
         }
         return Future.value(
-          _json({
-            'year': 2026,
-            'target_books': 12,
-            'target_pages': 3000,
-            'progress': {'books_read': 2},
-          }, 200),
+          _json([
+            {
+              'year': 2026,
+              'target_books': 12,
+              'target_pages': 3000,
+              'books_done': 2,
+              'pages_done': 500,
+            },
+          ], 200),
         );
       });
 
       final goals = await api.readingGoals();
-      expect(goals.year, 2026);
-      expect(goals.targetBooks, 12);
+      expect(goals.length, 1);
+      expect(goals.first.year, 2026);
+      expect(goals.first.targetBooks, 12);
       await api.saveReadingGoals(
         const ReadingGoals(year: 2027, targetBooks: 20, targetPages: 5000),
       );
@@ -483,8 +487,13 @@ void main() {
         'year': 2027,
         'target_books': 20,
         'target_pages': 5000,
-        'progress': <String, dynamic>{},
+        'books_done': 0,
+        'pages_done': 0,
       });
+
+      await api.removeReadingGoal(2026);
+      expect(adapter.request?.path, '/api/goals/2026');
+      expect(adapter.request?.method, 'DELETE');
     });
 
     test('reads and changes the want list', () async {

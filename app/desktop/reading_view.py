@@ -50,12 +50,61 @@ def _stat_card(icon: str, label: str, color: str) -> tuple[QFrame, QLabel]:
     return frame, value
 
 
+def _clear(layout) -> None:
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+
+
+def _goal_card(goal: dict, on_remove=None) -> QFrame:
+    """One saved objective: its year plus Books/Pages progress bars."""
+    frame = card()
+    col = QVBoxLayout(frame)
+    col.setContentsMargins(18, 16, 18, 16)
+    col.setSpacing(10)
+
+    year = goal.get("year")
+    header_row = QHBoxLayout()
+    heading = QLabel(str(year) if year else _("Any year"))
+    heading.setObjectName("SectionTitle")
+    header_row.addWidget(heading)
+    header_row.addStretch(1)
+    if on_remove is not None:
+        btn = QPushButton("🗑️")
+        btn.setProperty("variant", "muted")
+        btn.clicked.connect(on_remove)
+        header_row.addWidget(btn)
+    col.addLayout(header_row)
+
+    books_done = int(goal.get("books_done", 0) or 0)
+    pages_done = int(goal.get("pages_done", 0) or 0)
+    for label, target_key, done in (
+        (_("Books"), "target_books", books_done),
+        (_("Pages"), "target_pages", pages_done),
+    ):
+        target = int(goal.get(target_key, 0) or 0)
+        if not target:
+            continue
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(min(100, round(done / target * 100)))
+        bar.setTextVisible(True)
+        bar.setFormat(f"{done}/{target}")
+        col.addWidget(QLabel(label))
+        col.addWidget(bar)
+    return frame
+
+
 class ReadingView(QWidget):
     def __init__(self, on_change=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.on_change = on_change
         self._values: dict[str, QLabel] = {}
         self._pstats: dict = {}
+        self._goals: list[dict] = []
         self._loading = False
         self._deleted = False
         self.destroyed.connect(self._mark_deleted)
@@ -160,21 +209,9 @@ class ReadingView(QWidget):
         form_col.addStretch(1)
         goals_layout.addLayout(form_col, 1)
 
-        progress_col = QVBoxLayout()
-        progress_col.setSpacing(10)
-        progress_col.addWidget(section_title(_("Progress")))
-        self.books_bar = QProgressBar()
-        self.pages_bar = QProgressBar()
-        for bar in (self.books_bar, self.pages_bar):
-            bar.setRange(0, 100)
-            bar.setValue(0)
-            bar.setTextVisible(True)
-        progress_col.addWidget(QLabel(_("Books")))
-        progress_col.addWidget(self.books_bar)
-        progress_col.addWidget(QLabel(_("Pages")))
-        progress_col.addWidget(self.pages_bar)
-        progress_col.addStretch(1)
-        goals_layout.addLayout(progress_col, 1)
+        self.goals_host = QVBoxLayout()
+        self.goals_host.setSpacing(14)
+        goals_layout.addLayout(self.goals_host, 1)
 
         layout.addWidget(goals_card)
         layout.addStretch(1)
@@ -225,75 +262,122 @@ class ReadingView(QWidget):
             if label is not None:
                 label.setText(str(value))
 
-        goal_year = goals.get("year") if goals else None
-        self._fill_years(goal_year)
-        self.target_books.setValue(int((goals or {}).get("target_books", 0) or 0))
-        self.target_pages.setValue(int((goals or {}).get("target_pages", 0) or 0))
-        self._update_progress(goals or {})
+        self._goals = list(goals) if isinstance(goals, list) else []
+        self._fill_years(self._goals)
+        self._render_goals(self._goals)
         self.message.setVisible(False)
 
-    def _fill_years(self, selected: int | None) -> None:
+    def _fill_years(self, goals: list[dict]) -> None:
         self.year.blockSignals(True)
         self.year.clear()
         self.year.addItem(_("Any year"), None)
         this_year = date.today().year
-        for year in range(this_year - 2, this_year + 2):
+        # Only offer the current year and future years.
+        years = {
+            g.get("year")
+            for g in goals
+            if g.get("year") is not None and int(g.get("year")) >= this_year
+        }
+        years.update(range(this_year, this_year + 3))
+        for year in sorted(years):
             self.year.addItem(str(year), year)
-        if selected and self.year.findData(selected) < 0:
-            self.year.addItem(str(selected), selected)
-        index = self.year.findData(selected)
-        self.year.setCurrentIndex(max(0, index))
+        self.year.setCurrentIndex(0)
         self.year.blockSignals(False)
 
-    def _update_progress(self, goals: dict) -> None:
-        books_done = int(self._pstats.get("books_read", 0) or 0)
-        pages_done = int(self._pstats.get("pages_read", 0) or 0)
-        book_target = int(goals.get("target_books", 0) or 0)
-        page_target = int(goals.get("target_pages", 0) or 0)
-        for bar, done, target in (
-            (self.books_bar, books_done, book_target),
-            (self.pages_bar, pages_done, page_target),
-        ):
-            bar.setValue(
-                min(100, round(done / target * 100)) if target else 0
-            )
-            bar.setFormat(f"{done}/{target}" if target else str(done))
+    def _render_goals(self, goals: list[dict]) -> None:
+        _clear(self.goals_host)
+        if not goals:
+            hint = QLabel(_("Set your goals above to see progress."))
+            hint.setObjectName("Hint")
+            hint.setWordWrap(True)
+            self.goals_host.addWidget(hint)
+            return
+        for goal in goals:
+            # Qt's clicked(bool) may pass through, so swallow it with `_`.
+            on_remove = lambda _, g=goal: self._remove(g)
+            self.goals_host.addWidget(_goal_card(goal, on_remove=on_remove))
 
     # -- actions ------------------------------------------------------------ #
     def _save(self) -> None:
-        goals = {
+        goal = {
             "year": self.year.currentData(),
             "target_books": self.target_books.value(),
             "target_pages": self.target_pages.value(),
-            "progress": {
-                "books_read": int(self._pstats.get("books_read", 0) or 0),
-                "pages_read": int(self._pstats.get("pages_read", 0) or 0),
-            },
+            # A brand-new objective starts at zero progress; per-goal counts only
+            # move when a book is actually marked read.
+            "books_done": 0,
+            "pages_done": 0,
         }
         self.save_btn.setEnabled(False)
         self.message.setText(_("Saving…"))
         self.message.setVisible(True)
         if isinstance(get_repo(), RemoteRepo):
             run_blocking(
-                lambda: get_repo().save_goals(goals),
-                lambda _result: self._saved(goals),
+                lambda: get_repo().save_goals(goal),
+                lambda _result: self._saved(goal),
                 self._save_failed,
             )
             return
         try:
-            get_repo().save_goals(goals)
+            get_repo().save_goals(goal)
         except Exception as exc:  # noqa: BLE001
             self._save_failed(str(exc))
 
             return
-        self._saved(goals)
+        self._saved(goal)
 
-    def _saved(self, goals: dict) -> None:
+    def _saved(self, goal: dict) -> None:
         self.save_btn.setEnabled(True)
         if self._deleted:
             return
-        self._update_progress(goals)
+        # Merge the saved objective locally so the cards refresh without a
+        # second round-trip to the repo (which would block the GUI in remote mode).
+        year = goal.get("year")
+        clean = {
+            "year": year,
+            "target_books": int(goal.get("target_books", 0) or 0),
+            "target_pages": int(goal.get("target_pages", 0) or 0),
+            # Progress is now per-objective counters; a brand-new objective starts
+            # at zero, and the server will preserve existing progress on re-save.
+            "books_done": int(goal.get("books_done", 0) or 0),
+            "pages_done": int(goal.get("pages_done", 0) or 0),
+        }
+        merged = [g for g in self._goals if g.get("year") != year]
+        if clean["target_books"] or clean["target_pages"]:
+            merged.append(clean)
+        self._goals = merged
+        self._fill_years(merged)
+        self._render_goals(merged)
         self.message.setText(_("Goals saved."))
+        self.message.setVisible(True)
+
+    def _remove(self, goal: dict) -> None:
+        year = goal.get("year")
+        target = 0 if year is None else int(year)
+        self.message.setText(_("Removing…"))
+        self.message.setVisible(True)
+        if isinstance(get_repo(), RemoteRepo):
+            run_blocking(
+                lambda: get_repo().remove_goals(target),
+                lambda _result: self._removed(goal),
+                self._save_failed,
+            )
+            return
+        try:
+            get_repo().remove_goals(target)
+        except Exception as exc:  # noqa: BLE001
+            self._save_failed(str(exc))
+            return
+        self._removed(goal)
+
+    def _removed(self, goal: dict) -> None:
+        if self._deleted:
+            return
+        year = goal.get("year")
+        self._goals = [g for g in self._goals if g.get("year") != year]
+        self._fill_years(self._goals)
+        self._render_goals(self._goals)
+        self.message.setText(_("Objective removed."))
         self.message.setVisible(True)
 
     def _save_failed(self, message: str) -> None:

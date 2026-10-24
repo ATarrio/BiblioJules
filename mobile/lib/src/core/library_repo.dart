@@ -120,11 +120,14 @@ abstract interface class LibraryRepo {
   /// Personal totals computed from the catalogue (books/pages read, ratings…).
   Future<ReadingStats> personalStats();
 
-  /// The current reading goal. Local mode keeps one per device; a server keeps
-  /// one per account.
-  Future<ReadingGoals> readingGoals();
+  /// The reading objectives. Local mode keeps one per year per device; a
+  /// server keeps one per year per account.
+  Future<List<ReadingGoals>> readingGoals();
 
   Future<void> saveReadingGoals(ReadingGoals goals);
+
+  /// Drop the objective for [year] (``0`` clears the "any year" objective).
+  Future<void> removeReadingGoal(int year);
 
   /// Books to look for next. Local mode keeps one per device; a server keeps
   /// one per account.

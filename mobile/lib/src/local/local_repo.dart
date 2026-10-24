@@ -111,10 +111,20 @@ class LocalRepo implements LibraryRepo {
         if (oldVersion < 2) {
           await _upgradeToSyncSchema(db);
         }
+        // Version 2 → 3: reading objectives move from a side JSON file into a
+        // table, so the single-file export carries them.
+        if (oldVersion < 3) {
+          for (final statement in kGoalsMigrationStatements) {
+            await db.execute(statement);
+          }
+        }
       },
     );
     _db = database;
     _libraryName = name;
+    // Objectives used to be a side JSON file; move them into the table once so
+    // the single-file export carries them.
+    await _migrateLegacyGoals(database);
   }
 
   /// Add the sync columns to a library that predates sharing, and fill them in.
@@ -500,8 +510,10 @@ class LocalRepo implements LibraryRepo {
       if (!tables.contains('books')) return; // empty file: let onCreate run
       final columns = await db.rawQuery('PRAGMA table_info(books)');
       final hasSync = columns.any((row) => row['name'] == 'sync_id');
+      final hasGoals = tables.contains('reading_goals');
+      final stamped = hasGoals ? kLibrarySchemaVersion : (hasSync ? 2 : 1);
       await db.execute(
-        'PRAGMA user_version = ${hasSync ? kLibrarySchemaVersion : 1}',
+        'PRAGMA user_version = $stamped',
       );
     } finally {
       await db.close();
@@ -877,6 +889,7 @@ class LocalRepo implements LibraryRepo {
     final db = _requireDb();
     final existing = await _bookRow(db, id);
     if (existing == null) throw ApiNotFoundException(_t('Book not found'));
+    final previousStatus = existing['read_status'] as String?;
     await db.transaction((txn) async {
       final values = await _applyFields(
         txn,
@@ -886,6 +899,19 @@ class LocalRepo implements LibraryRepo {
       values['updated_at'] = nowStamp();
       await txn.update('books', values, where: 'id = ?', whereArgs: [id]);
       await _applyRelations(txn, id, payload);
+      // A book newly marked read counts toward the objective for this year
+      // (and any "any year" objective). Progress is per objective, never the
+      // all-time dashboard count, which is derived from the library on each
+      // read.
+      final newStatus = values.containsKey('read_status')
+          ? values['read_status'] as String?
+          : previousStatus;
+      if (newStatus == 'read' && previousStatus != 'read') {
+        final pages = values.containsKey('page_count')
+            ? (values['page_count'] as int? ?? 0)
+            : ((existing['page_count'] as int?) ?? 0);
+        await _recordRead(txn, pages);
+      }
     });
     // Editing a book's authors or publisher can strand the previous ones.
     await _pruneOrphans(db);
@@ -1742,25 +1768,164 @@ class LocalRepo implements LibraryRepo {
     year: goals.year == null || goals.year! <= 0 ? null : goals.year,
     targetBooks: goals.targetBooks < 0 ? 0 : goals.targetBooks,
     targetPages: goals.targetPages < 0 ? 0 : goals.targetPages,
-    progress: goals.progress,
+    booksDone: goals.booksDone < 0 ? 0 : goals.booksDone,
+    pagesDone: goals.pagesDone < 0 ? 0 : goals.pagesDone,
   );
 
-  @override
-  Future<ReadingGoals> readingGoals() async {
+  /// An objective counts as set only when it has a target to aim at.
+  bool _hasTarget(ReadingGoals goals) =>
+      goals.targetBooks > 0 || goals.targetPages > 0;
+
+  /// SQL that matches an objective by year, where ``null`` is the "any year"
+  /// objective (stored as a null year).
+  String _goalYearWhere(int? year) =>
+      year == null ? 'year IS NULL' : 'year = ?';
+  List<Object?> _goalYearArgs(int? year) =>
+      year == null ? const <Object?>[] : <Object?>[year];
+
+  /// Move a device's old ``goals.json`` into the table, once.
+  ///
+  /// Objectives used to be a side JSON file, which the single-file export
+  /// dropped. On the first open of a library that still has that file and an
+  /// empty table, copy the objectives across and remove the file so this runs
+  /// only once. Old all-time progress is not carried over: a per-objective
+  /// counter starts at zero and only moves when a book is marked read.
+  Future<void> _migrateLegacyGoals(Database db) async {
+    final existing = await db.query('reading_goals');
+    if (existing.isNotEmpty) return;
     final file = await _readingFile('goals.json');
-    final data = await _readJsonFile(file, const <String, dynamic>{});
-    return ReadingGoals.fromJson(
-      data is Map ? Map<String, dynamic>.from(data) : const <String, dynamic>{},
+    if (!file.existsSync()) return;
+    final data = await _readJsonFile(file, const <Object?>[]);
+    for (final goal in _parseGoals(data)) {
+      if (!_hasTarget(goal)) continue;
+      await db.insert(
+        'reading_goals',
+        <String, Object?>{
+          'year': goal.year,
+          'target_books': goal.targetBooks,
+          'target_pages': goal.targetPages,
+          'books_done': 0,
+          'pages_done': 0,
+        },
+      );
+    }
+    try {
+      await file.delete();
+    } catch (_) {}
+  }
+
+  /// Count a book marked read, toward the objective for the current year and
+  /// any "any year" objective. Progress is per objective, so this never touches
+  /// the all-time dashboard count.
+  Future<void> _recordRead(DatabaseExecutor db, int pages) async {
+    final year = DateTime.now().year;
+    final rows = await db.query(
+      'reading_goals',
+      where: 'year = ? OR year IS NULL',
+      whereArgs: <Object?>[year],
     );
+    for (final row in rows) {
+      final booksDone = (row['books_done'] as num?)?.toInt() ?? 0;
+      final pagesDone = (row['pages_done'] as num?)?.toInt() ?? 0;
+      await db.update(
+        'reading_goals',
+        <String, Object?>{
+          'books_done': booksDone + 1,
+          'pages_done': pagesDone + (pages > 0 ? pages : 0),
+        },
+        where: 'id = ?',
+        whereArgs: <Object?>[row['id']],
+      );
+    }
+  }
+
+  /// Read the objectives list, accepting the legacy single-object shape.
+  List<ReadingGoals> _parseGoals(Object? data) {
+    final raw = data is List
+        ? data
+        : data is Map
+        ? <Object?>[data]
+        : const <Object?>[];
+    final parsed = <ReadingGoals>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final goal = _cleanGoals(
+        ReadingGoals.fromJson(Map<String, dynamic>.from(item)),
+      );
+      if (_hasTarget(goal)) parsed.add(goal);
+    }
+    return parsed;
+  }
+
+  @override
+  Future<List<ReadingGoals>> readingGoals() async {
+    final db = _requireDb();
+    final rows = await db.query('reading_goals', orderBy: 'year IS NULL, year');
+    final goals = <ReadingGoals>[];
+    for (final row in rows) {
+      final goal = _cleanGoals(
+        ReadingGoals(
+          year: (row['year'] as num?)?.toInt(),
+          targetBooks: (row['target_books'] as num?)?.toInt() ?? 0,
+          targetPages: (row['target_pages'] as num?)?.toInt() ?? 0,
+          booksDone: (row['books_done'] as num?)?.toInt() ?? 0,
+          pagesDone: (row['pages_done'] as num?)?.toInt() ?? 0,
+        ),
+      );
+      if (_hasTarget(goal)) goals.add(goal);
+    }
+    return goals;
   }
 
   @override
   Future<void> saveReadingGoals(ReadingGoals goals) async {
     final clean = _cleanGoals(goals);
-    await _serialized(() async {
-      final file = await _readingFile('goals.json');
-      await _writeJsonFile(file, clean.toJson());
+    final db = _requireDb();
+    await db.transaction((txn) async {
+      // Replace the objective for this year, or append a new one. An empty
+      // objective clears that year. A re-save keeps the progress the existing
+      // row for that year already had, so editing a target never resets it.
+      final existing = await txn.query(
+        'reading_goals',
+        where: _goalYearWhere(clean.year),
+        whereArgs: _goalYearArgs(clean.year),
+      );
+      final booksDone = existing.isEmpty
+          ? 0
+          : (existing.last['books_done'] as num?)?.toInt() ?? 0;
+      final pagesDone = existing.isEmpty
+          ? 0
+          : (existing.last['pages_done'] as num?)?.toInt() ?? 0;
+      await txn.delete(
+        'reading_goals',
+        where: _goalYearWhere(clean.year),
+        whereArgs: _goalYearArgs(clean.year),
+      );
+      if (_hasTarget(clean)) {
+        await txn.insert(
+          'reading_goals',
+          <String, Object?>{
+            'year': clean.year,
+            'target_books': clean.targetBooks,
+            'target_pages': clean.targetPages,
+            'books_done': booksDone,
+            'pages_done': pagesDone,
+          },
+        );
+      }
     });
+  }
+
+  @override
+  Future<void> removeReadingGoal(int year) async {
+    final db = _requireDb();
+    // ``0`` is the sentinel for the "any year" objective, stored as a null year.
+    final target = year == 0 ? null : year;
+    await db.delete(
+      'reading_goals',
+      where: _goalYearWhere(target),
+      whereArgs: _goalYearArgs(target),
+    );
   }
 
   @override

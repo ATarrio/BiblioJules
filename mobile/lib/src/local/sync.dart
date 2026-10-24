@@ -1552,6 +1552,9 @@ class LibrarySync {
       await snapshot.execute('DROP TABLE IF EXISTS users');
       await snapshot.execute('DROP TABLE IF EXISTS tokens');
       await snapshot.execute('DROP TABLE IF EXISTS sync_meta');
+      // Objectives are per-device metadata: they never travel through a
+      // cross-device merge, so a snapshot must not carry them.
+      await snapshot.execute('DROP TABLE IF EXISTS reading_goals');
       await snapshot.execute(
         'CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
       );

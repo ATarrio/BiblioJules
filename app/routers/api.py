@@ -204,7 +204,7 @@ def create_book(payload: BookIn, db: Session = Depends(get_db)):
 
 
 @router.put("/books/{book_id}")
-def update_book(book_id: int, payload: BookIn, db: Session = Depends(get_db)):
+def update_book(book_id: int, payload: BookIn, request: Request, db: Session = Depends(get_db)):
     book = library.get_book(db, book_id)
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -212,7 +212,9 @@ def update_book(book_id: int, payload: BookIn, db: Session = Depends(get_db)):
     # ``null``, which is how form-style clients clear a value (e.g. remove a
     # book from its shelf) without overwriting the ones they left out.
     try:
-        library.update_book(db, book, payload.model_dump(exclude_unset=True))
+        library.update_book(
+            db, book, payload.model_dump(exclude_unset=True), user_id=_user_id(request)
+        )
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -507,19 +509,28 @@ def personal_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/goals")
-def reading_goals(request: Request):
-    """Read the signed-in account's reading goals."""
+def reading_goals(request: Request, db: Session = Depends(get_db)):
+    """Read the signed-in account's reading objectives (one per year)."""
     from ..services.stats import load_goals
 
-    return load_goals(user_id=_user_id(request))
+    return load_goals(db, user_id=_user_id(request))
 
 
 @router.post("/goals")
-def save_reading_goals(payload: dict, request: Request):
-    """Save reading goals (target books / pages for a given year)."""
+def save_reading_goals(payload: dict, request: Request, db: Session = Depends(get_db)):
+    """Save one reading objective (target books / pages for a given year)."""
     from ..services.stats import save_goals
 
-    save_goals(payload, user_id=_user_id(request))
+    save_goals(db, payload, user_id=_user_id(request))
+    return {"ok": True}
+
+
+@router.delete("/goals/{year}")
+def delete_reading_goal(year: int, request: Request, db: Session = Depends(get_db)):
+    """Remove the objective for a year (``0`` clears the "any year" objective)."""
+    from ..services.stats import remove_goals
+
+    remove_goals(db, year=None if year == 0 else year, user_id=_user_id(request))
     return {"ok": True}
 
 

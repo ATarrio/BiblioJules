@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
@@ -175,7 +176,7 @@ class DashboardView(QWidget):
             pstats = repo.personal_stats()
             goals = repo.goals()
         except Exception:
-            pstats, goals = {}, {}
+            pstats, goals = {}, []
         return stats, counts, recent, pstats, goals
 
     def refresh(self) -> None:
@@ -218,8 +219,17 @@ class DashboardView(QWidget):
         # Personal reading stats + goal progress (local-only).
         done = int(pstats.get("books_read", 0) or 0)
         self._values["books_read"].setText(str(done))
-        target = int(goals.get("target_books", 0) or 0)
-        self._values["goal"].setText(f"{done}/{target}" if target else _("Not set"))
+        # The headline shows the current year's objective, falling back to the
+        # most recent one when this year has none.
+        this_year = date.today().year
+        current = next((g for g in goals if g.get("year") == this_year), None)
+        if current is None and goals:
+            current = max(goals, key=lambda g: g.get("year") or 0)
+        current = current or {}
+        progress = current.get("progress") or {}
+        goal_done = int(progress.get("books_read", 0) or 0)
+        target = int(current.get("target_books", 0) or 0)
+        self._values["goal"].setText(f"{goal_done}/{target}" if target else _("Not set"))
 
         self._fill_statuses(counts)
         self._fill_recent(recent)

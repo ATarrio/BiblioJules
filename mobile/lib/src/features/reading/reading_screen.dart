@@ -100,7 +100,7 @@ class _StatsTab extends ConsumerWidget {
           message: describeError(context, error),
           onRetry: () => ref.invalidate(readingGoalsProvider),
         ),
-        data: (goal) => RefreshIndicator(
+        data: (objectives) => RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(readingStatsProvider);
             ref.invalidate(readingGoalsProvider);
@@ -116,13 +116,31 @@ class _StatsTab extends ConsumerWidget {
             children: [
               _StatGrid(stats: reading),
               const SizedBox(height: 20),
-              _GoalsCard(
-                key: ValueKey(
-                  '${goal.year}|${goal.targetBooks}|${goal.targetPages}',
-                ),
-                stats: reading,
-                goals: goal,
-              ),
+              // One read-only card per saved objective: year + progress/total.
+              if (objectives.isEmpty)
+                _EmptyGoals()
+              else
+                for (final objective in objectives)
+                  _GoalCard(
+                    goal: objective,
+                    remove: (year) async {
+                      await runGuarded<bool>(
+                        context,
+                        ref,
+                        () async {
+                          await ref.read(repoProvider).removeReadingGoal(year);
+                          return true;
+                        },
+                        successMessage: context.localized.tr(
+                          'Objective removed.',
+                        ),
+                      );
+                      ref.invalidate(readingGoalsProvider);
+                    },
+                  ),
+              const SizedBox(height: 20),
+              // The editor stays last so saved objectives are seen first.
+              _GoalsEditor(stats: reading),
             ],
           ),
         ),
@@ -231,17 +249,102 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-class _GoalsCard extends ConsumerStatefulWidget {
-  const _GoalsCard({super.key, required this.stats, required this.goals});
+/// A saved objective, shown read-only: its year and progress against target.
+class _GoalCard extends StatelessWidget {
+  const _GoalCard({required this.goal, required this.remove});
 
-  final ReadingStats stats;
-  final ReadingGoals goals;
+  final ReadingGoals goal;
+  final Future<void> Function(int year) remove;
 
   @override
-  ConsumerState<_GoalsCard> createState() => _GoalsCardState();
+  Widget build(BuildContext context) {
+    final l10n = context.localized;
+    final booksDone = goal.booksDone;
+    final pagesDone = goal.pagesDone;
+    final booksTarget = goal.targetBooks;
+    final pagesTarget = goal.targetPages;
+    final bookValue = booksTarget == 0
+        ? 0.0
+        : (booksDone / booksTarget).clamp(0.0, 1.0);
+    final pageValue = pagesTarget == 0
+        ? 0.0
+        : (pagesDone / pagesTarget).clamp(0.0, 1.0);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  goal.year == null
+                      ? l10n.tr('Any year')
+                      : '${goal.year}',
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                TextButton(
+                  onPressed: () => remove(goal.year ?? 0),
+                  child: const Text("🗑️"),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (booksTarget > 0)
+              _ProgressRow(
+                label: l10n.tr('Books'),
+                done: booksDone,
+                target: booksTarget,
+                value: bookValue,
+              ),
+            if (pagesTarget > 0) ...[
+              const SizedBox(height: 10),
+              _ProgressRow(
+                label: l10n.tr('Pages'),
+                done: pagesDone,
+                target: pagesTarget,
+                value: pageValue,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _GoalsCardState extends ConsumerState<_GoalsCard> {
+class _EmptyGoals extends StatelessWidget {
+  const _EmptyGoals();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.localized;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Text(
+        l10n.tr('No objectives yet. Set one below.'),
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodyMedium
+            ?.copyWith(color: kSlate500),
+      ),
+    );
+  }
+}
+
+/// The form that captures one objective (year + targets) and saves it.
+class _GoalsEditor extends ConsumerStatefulWidget {
+  const _GoalsEditor({required this.stats});
+
+  final ReadingStats stats;
+
+  @override
+  ConsumerState<_GoalsEditor> createState() => _GoalsEditorState();
+}
+
+class _GoalsEditorState extends ConsumerState<_GoalsEditor> {
   late final TextEditingController _books;
   late final TextEditingController _pages;
   late int _year;
@@ -250,13 +353,9 @@ class _GoalsCardState extends ConsumerState<_GoalsCard> {
   @override
   void initState() {
     super.initState();
-    _books = TextEditingController(
-      text: widget.goals.targetBooks == 0 ? '' : '${widget.goals.targetBooks}',
-    );
-    _pages = TextEditingController(
-      text: widget.goals.targetPages == 0 ? '' : '${widget.goals.targetPages}',
-    );
-    _year = widget.goals.year ?? 0;
+    _books = TextEditingController();
+    _pages = TextEditingController();
+    _year = 0;
   }
 
   @override
@@ -268,8 +367,9 @@ class _GoalsCardState extends ConsumerState<_GoalsCard> {
 
   List<int> get _years {
     final thisYear = DateTime.now().year;
-    final years = <int>{0, widget.goals.year ?? 0};
-    for (var year = thisYear - 2; year <= thisYear + 1; year++) {
+    // Only offer the current year and future years.
+    final years = <int>{0};
+    for (var year = thisYear; year <= thisYear + 2; year++) {
       years.add(year);
     }
     final sorted = years.toList()..sort();
@@ -285,10 +385,6 @@ class _GoalsCardState extends ConsumerState<_GoalsCard> {
       year: _year == 0 ? null : _year,
       targetBooks: _target(_books),
       targetPages: _target(_pages),
-      progress: <String, dynamic>{
-        'books_read': widget.stats.booksRead,
-        'pages_read': widget.stats.pagesRead,
-      },
     );
     setState(() => _saving = true);
     final saved = await runGuarded<bool>(context, ref, () async {
@@ -302,15 +398,6 @@ class _GoalsCardState extends ConsumerState<_GoalsCard> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.localized;
-    final booksTarget = _target(_books);
-    final pagesTarget = _target(_pages);
-    final bookValue = booksTarget == 0
-        ? 0.0
-        : (widget.stats.booksRead / booksTarget).clamp(0.0, 1.0);
-    final pageValue = pagesTarget == 0
-        ? 0.0
-        : (widget.stats.pagesRead / pagesTarget).clamp(0.0, 1.0);
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
@@ -362,20 +449,6 @@ class _GoalsCardState extends ConsumerState<_GoalsCard> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 14),
-            _ProgressRow(
-              label: l10n.tr('Books'),
-              done: widget.stats.booksRead,
-              target: booksTarget,
-              value: bookValue,
-            ),
-            const SizedBox(height: 10),
-            _ProgressRow(
-              label: l10n.tr('Pages'),
-              done: widget.stats.pagesRead,
-              target: pagesTarget,
-              value: pageValue,
             ),
             const SizedBox(height: 14),
             Align(

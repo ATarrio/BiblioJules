@@ -164,11 +164,15 @@ class Repo(ABC):
         """Reading stats derived from the library (shared data, local view)."""
 
     @abstractmethod
-    def goals(self) -> dict:
-        """Per-device reading goals (local-only)."""
+    def goals(self) -> list[dict]:
+        """Per-device reading objectives, one per year (local-only)."""
 
     @abstractmethod
-    def save_goals(self, goals: dict) -> None: ...
+    def save_goals(self, goal: dict) -> None: ...
+
+    @abstractmethod
+    def remove_goals(self, year: int) -> None:
+        """Drop the objective for [year] (``0`` removes the \"any year\" one)."""
 
     @abstractmethod
     def want_list(self) -> list[dict]: ...
@@ -354,15 +358,23 @@ class LocalRepo(Repo):
         with session_scope() as db:
             return compute_stats(db)
 
-    def goals(self) -> dict:
+    def goals(self) -> list[dict]:
         from ..services.stats import load_goals
 
-        return load_goals()
+        with session_scope() as db:
+            return load_goals(db)
 
-    def save_goals(self, goals: dict) -> None:
+    def save_goals(self, goal: dict) -> None:
         from ..services.stats import save_goals
 
-        save_goals(goals)
+        with session_scope() as db:
+            save_goals(db, goal)
+
+    def remove_goals(self, year: int) -> None:
+        from ..services.stats import remove_goals
+
+        with session_scope() as db:
+            remove_goals(db, None if year == 0 else year)
 
     def want_list(self) -> list[dict]:
         from ..services.stats import load_want_list
@@ -594,11 +606,14 @@ class RemoteRepo(Repo):
     def personal_stats(self) -> dict:
         return self._request("GET", "/api/personal-stats") or {}
 
-    def goals(self) -> dict:
-        return self._request("GET", "/api/goals") or {}
+    def goals(self) -> list[dict]:
+        return self._request("GET", "/api/goals") or []
 
-    def save_goals(self, goals: dict) -> None:
-        self._request("POST", "/api/goals", json=goals)
+    def save_goals(self, goal: dict) -> None:
+        self._request("POST", "/api/goals", json=goal)
+
+    def remove_goals(self, year: int) -> None:
+        self._request("DELETE", f"/api/goals/{year}")
 
     def want_list(self) -> list[dict]:
         return self._request("GET", "/api/wantlist") or []

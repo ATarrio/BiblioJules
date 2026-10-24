@@ -57,34 +57,39 @@ class ReadingStats {
   }
 }
 
-/// A yearly reading goal. Zero means "not set"; a null year means "any year".
+/// A yearly reading objective. Zero means "not set"; a null year means "any
+/// year". Progress is tracked per objective (``booksDone`` / ``pagesDone``),
+/// bumped whenever a book is marked read in this objective's year — never the
+/// all-time count of read books, which stays on the dashboard.
 class ReadingGoals {
   const ReadingGoals({
     this.year,
     this.targetBooks = 0,
     this.targetPages = 0,
-    this.progress = const {},
+    this.booksDone = 0,
+    this.pagesDone = 0,
   });
 
   final int? year;
   final int targetBooks;
   final int targetPages;
-  final Map<String, dynamic> progress;
+  final int booksDone;
+  final int pagesDone;
 
   factory ReadingGoals.fromJson(Map<String, dynamic> json) => ReadingGoals(
     year: (json['year'] as num?)?.toInt(),
     targetBooks: (json['target_books'] as num?)?.toInt() ?? 0,
     targetPages: (json['target_pages'] as num?)?.toInt() ?? 0,
-    progress: json['progress'] is Map
-        ? Map<String, dynamic>.from(json['progress'] as Map)
-        : const {},
+    booksDone: (json['books_done'] as num?)?.toInt() ?? 0,
+    pagesDone: (json['pages_done'] as num?)?.toInt() ?? 0,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'year': year,
     'target_books': targetBooks,
     'target_pages': targetPages,
-    'progress': progress,
+    'books_done': booksDone,
+    'pages_done': pagesDone,
   };
 }
 

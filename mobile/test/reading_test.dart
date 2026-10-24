@@ -63,18 +63,35 @@ void main() {
     expect(stats.totalBooks, 4);
   });
 
-  test('goals survive closing and reopening the library', () async {
+  test('objectives survive closing and reopening the library', () async {
     await repo.saveReadingGoals(
       const ReadingGoals(year: 2026, targetBooks: 12, targetPages: 3000),
     );
-    expect((await repo.readingGoals()).targetBooks, 12);
+    expect((await repo.readingGoals()).first.targetBooks, 12);
+
+    // A second year is kept alongside the first, one objective per year.
+    await repo.saveReadingGoals(
+      const ReadingGoals(year: 2025, targetBooks: 20),
+    );
+    expect((await repo.readingGoals()).length, 2);
+
+    // Re-saving the same year replaces that year's objective.
+    await repo.saveReadingGoals(
+      const ReadingGoals(year: 2026, targetBooks: 30),
+    );
+    final replaced = await repo.readingGoals();
+    expect(replaced.length, 2);
+    expect(
+      replaced.firstWhere((g) => g.year == 2026).targetBooks,
+      30,
+    );
 
     await repo.close();
     repo = await _open(dir);
     final goals = await repo.readingGoals();
-    expect(goals.year, 2026);
-    expect(goals.targetBooks, 12);
-    expect(goals.targetPages, 3000);
+    expect(goals.length, 2);
+    expect(goals.firstWhere((g) => g.year == 2026).targetBooks, 30);
+    expect(goals.firstWhere((g) => g.year == 2025).targetBooks, 20);
   });
 
   test('the want list deduplicates, removes and persists entries', () async {

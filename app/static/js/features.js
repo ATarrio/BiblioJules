@@ -97,44 +97,75 @@
     } catch (e) { return false; }
   }
 
-  /** Update the goals progress bars. `stats` carries live books/pages read. */
+  async function removeGoal(year) {
+    try {
+      const y = (year == null || year === '') ? 0 : Number(year);
+      const res = await fetch(`/api/goals/${y}`, { method: 'DELETE' });
+      return res.ok;
+    } catch (e) { return false; }
+  }
+
+  /** Render one block per saved objective, each with its year and progress. */
   function renderGoalsProgress(goals, stats, host) {
-    if (!host || !goals) return;
-    const booksDone = stats?.books_read || 0;
-    const pagesDone = stats?.pages_read || 0;
-    const bookTarget = goals.target_books || 0;
-    const pageTarget = goals.target_pages || 0;
+    if (!host) return;
+    const list = Array.isArray(goals) ? goals : (goals ? [goals] : []);
+    host.innerHTML = '';
+    if (!list.length) {
+      host.insertAdjacentHTML('beforeend',
+        `<div class="text-xs text-slate-500 dark:text-slate-400">${t('Set your goals above to see progress.')}</div>`);
+      return;
+    }
     const bar = (done, target) => ({
       pct: target ? Math.min(100, Math.round((done / target) * 100)) : 0,
       label: target ? `${done}/${target}` : `${done}`,
     });
-    const books = bar(booksDone, bookTarget);
-    const pages = bar(pagesDone, pageTarget);
-
-    host.innerHTML = '';
-    host.insertAdjacentHTML('beforeend',
-      `<div class="space-y-3">` +
-      `<div class="space-y-2">` +
-      `<div class="flex items-center justify-between text-sm">` +
-        `<span class="text-slate-600 dark:text-slate-400">${t('Reading goal')}</span>` +
-        `<span class="font-medium text-slate-900 dark:text-white">${books.label} ${t('books')}</span>` +
-      `</div>` +
-      `<div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">` +
-        `<div class="h-full rounded-full bg-brand-600 transition-all" style="width:${books.pct}%"></div>` +
-      `</div>` +
-      `</div>` +
-      (pageTarget ?
-        `<div class="space-y-2">` +
+    for (const goal of list) {
+      const booksDone = goal.books_done || 0;
+      const pagesDone = goal.pages_done || 0;
+      const year = goal.year ? String(goal.year) : t('Any year');
+      const bookTarget = goal.target_books || 0;
+      const pageTarget = goal.target_pages || 0;
+      const books = bar(booksDone, bookTarget);
+      const pages = bar(pagesDone, pageTarget);
+      let block =
+        `<div class="space-y-3">` +
         `<div class="flex items-center justify-between text-sm">` +
-          `<span class="text-slate-600 dark:text-slate-400">${t('Pages goal')}</span>` +
-          `<span class="font-medium text-slate-900 dark:text-white">${pages.label} ${t('pages')}</span>` +
-        `</div>` +
-        `<div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">` +
-          `<div class="h-full rounded-full bg-emerald-500 transition-all" style="width:${pages.pct}%"></div>` +
-        `</div>` +
-        `</div>` : '') +
-      `</div>`
-    );
+        `<span class="font-semibold text-slate-900 dark:text-white">${escapeHtml(year)}</span>` +
+        `<button type="button" class="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium" data-goal-year="${goal.year}">🗑️</button>` +
+        `</div>`;
+      if (bookTarget) {
+        block +=
+          `<div class="flex items-center justify-between text-sm">` +
+            `<span class="text-slate-600 dark:text-slate-400">${t('Books')}</span>` +
+            `<span class="font-medium text-slate-900 dark:text-white">${books.label}</span>` +
+          `</div>` +
+          `<div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">` +
+            `<div class="h-full rounded-full bg-brand-600 transition-all" style="width:${books.pct}%"></div>` +
+          `</div>`;
+      }
+      if (pageTarget) {
+        block +=
+          `<div class="flex items-center justify-between text-sm">` +
+            `<span class="text-slate-600 dark:text-slate-400">${t('Pages')}</span>` +
+            `<span class="font-medium text-slate-900 dark:text-white">${pages.label}</span>` +
+          `</div>` +
+          `<div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">` +
+            `<div class="h-full rounded-full bg-emerald-500 transition-all" style="width:${pages.pct}%"></div>` +
+          `</div>`;
+      }
+      block += `</div>`;
+      host.insertAdjacentHTML('beforeend', block);
+    }
+    // Wire up remove buttons so deleting one drops its card from the page.
+    for (const btn of host.querySelectorAll('button[data-goal-year]')) {
+      btn.addEventListener('click', async () => {
+        const year = btn.getAttribute('data-goal-year');
+        const y = (year === 'null' || year === '' ? 0 : Number(year));
+        if (!(await removeGoal(y))) return;
+        const card = btn.closest('.space-y-3');
+        if (card) card.remove();
+      });
+    }
   }
 
   // ----------------------------------------------------------------------- #

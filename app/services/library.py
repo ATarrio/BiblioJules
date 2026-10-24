@@ -217,12 +217,20 @@ def create_book(db: Session, data: dict, *, commit: bool = True) -> Book:
     return book
 
 
-def update_book(db: Session, book: Book, data: dict) -> Book:
+def update_book(db: Session, book: Book, data: dict, *, user_id: int | None = None) -> Book:
+    previous_status = book.read_status
     apply_book_data(db, book, data)
     db.commit()
     # Editing a book's authors/publisher can strand the previous ones.
     prune_orphans(db)
     db.refresh(book)
+    # A book newly marked read counts toward the objective for this year (and
+    # any "any year" objective). Progress is per objective, never the all-time
+    # dashboard count, which is derived from the library on each read.
+    if book.read_status == "read" and previous_status != "read":
+        from ..services.stats import record_read
+
+        record_read(db, user_id=user_id, pages=book.page_count or 0)
     return book
 
 

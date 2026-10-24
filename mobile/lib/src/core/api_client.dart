@@ -546,14 +546,23 @@ class ApiClient implements LibraryRepo {
   }
 
   @override
-  Future<ReadingGoals> readingGoals() async {
+  Future<List<ReadingGoals>> readingGoals() async {
     final response = await _get('/api/goals');
-    return ReadingGoals.fromJson(response.data as Map<String, dynamic>);
+    final data = response.data;
+    if (data is! List) return const [];
+    return [
+      for (final item in data)
+        if (item is Map) ReadingGoals.fromJson(Map<String, dynamic>.from(item)),
+    ];
   }
 
   @override
   Future<void> saveReadingGoals(ReadingGoals goals) =>
       _send('POST', '/api/goals', body: goals.toJson());
+
+  @override
+  Future<void> removeReadingGoal(int year) =>
+      _send('DELETE', '/api/goals/$year');
 
   @override
   Future<List<WantEntry>> wantList() async {
