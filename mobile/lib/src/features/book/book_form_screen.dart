@@ -18,13 +18,16 @@ import '../../widgets/picker_sheet.dart';
 /// Also the landing place for the Discover tab and the barcode scanner, both of
 /// which hand over what they found through [initialIsbn] or [initialData].
 class BookFormScreen extends ConsumerStatefulWidget {
-  const BookFormScreen({super.key, this.bookId, this.initialIsbn, this.initialData});
+  const BookFormScreen({super.key, this.bookId, this.initialIsbn, this.initialData, this.initialWantEntry});
 
   final int? bookId;
   final String? initialIsbn;
 
   /// Metadata from an online lookup, used to prefill a brand-new book.
   final SearchResult? initialData;
+
+  /// A want-to-read entry, used to prefill a brand-new book with "to_read" status.
+  final WantEntry? initialWantEntry;
 
   @override
   ConsumerState<BookFormScreen> createState() => _BookFormScreenState();
@@ -65,7 +68,17 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   void initState() {
     super.initState();
     final data = widget.initialData;
+    final want = widget.initialWantEntry;
     if (widget.initialIsbn != null) _isbn.text = widget.initialIsbn!;
+    if (want != null) {
+      _title.text = want.title;
+      _authors.text = want.authors.isNotEmpty ? want.authors : '';
+      _isbn.text = _isbn.text.isEmpty ? want.isbn ?? '' : _isbn.text;
+      _publisher.text = want.publisher ?? '';
+      _readStatus = 'to_read';
+      _source = 'want_list_import';
+      return;
+    }
     if (data != null) {
       _title.text = data.title;
       _authors.text = data.authors.join(', ');
@@ -188,7 +201,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       invalidateBooks(ref);
       if (!mounted) return;
       showSnack(context, context.localized.tr(_isEdit ? 'Book saved.' : 'Book added.'));
-      context.pop();
+      // Opened from a want-to-read entry: report success so the caller can drop
+      // that entry. Cancelling pops with null, leaving the entry untouched.
+      context.pop(widget.initialWantEntry != null && !_isEdit ? true : null);
     } on ApiAuthException catch (error) {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {

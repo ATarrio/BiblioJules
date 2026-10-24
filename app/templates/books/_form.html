@@ -45,7 +45,7 @@
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('ISBN') }}</label>
           <div class="flex gap-2">
-            <input name="isbn" aria-label="{{ _('ISBN') }}" value="{{ form.get('isbn') or '' }}"
+            <input name="isbn" id="book-isbn" aria-label="{{ _('ISBN') }}" value="{{ form.get('isbn') or '' }}"
                    {% if not is_edit %}data-modal-autofocus{% endif %}
                    onkeydown="if (event.key === 'Enter') { event.preventDefault(); }"
                    hx-post="/scan" hx-trigger="keyup[key=='Enter' && this.value.trim() !== '']"
@@ -54,13 +54,15 @@
                    class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
             <button type="button" hx-post="/scan" hx-include="#book-form"
                     hx-target="#modal-body" hx-swap="innerHTML"
+                    class="whitespace-nowrap rounded-lg bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-600 shadow-sm transition hover:bg-brand-100 dark:bg-slate-800 dark:text-brand-400 dark:hover:bg-slate-700">{{ _('Look up online') }}</button>
+            <button type="button" hx-post="/scan" hx-include="#book-form"
+                    hx-target="#modal-body" hx-swap="innerHTML"
                     class="whitespace-nowrap rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700">{{ _('Scan barcode') }}</button>
           </div>
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Title') }} *</label>
-          <input name="title" aria-label="{{ _('Title') }}" required value="{{ form.get('title') or '' }}"
-                 class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+          <input name="title" id="book-title" aria-label="{{ _('Title') }}" class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white" required value="{{ form.get('title') or '' }}">
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Subtitle') }}</label>
@@ -69,12 +71,12 @@
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Authors') }} <span class="font-normal">({{ _('comma separated') }})</span></label>
-          <input name="authors" aria-label="{{ _('Authors') }}" value="{{ form.get('authors') or '' }}" placeholder="Ursula K. Le Guin"
+          <input name="authors" id="book-authors" aria-label="{{ _('Authors') }}" value="{{ form.get('authors') or '' }}" placeholder="Ursula K. Le Guin"
                  class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Publisher') }}</label>
-          <input name="publisher" aria-label="{{ _('Publisher') }}" value="{{ form.get('publisher') or '' }}"
+          <input name="publisher" id="book-publisher" aria-label="{{ _('Publisher') }}" value="{{ form.get('publisher') or '' }}"
                  class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
         </div>
       </div>

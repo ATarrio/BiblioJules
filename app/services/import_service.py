@@ -43,7 +43,7 @@ def parse_import_csv(text: str, delimiter: str = ",") -> list[dict]:
                 row["title"] = row[alias]
                 break
         # ISBN from common headers.
-        for alias in ("isbn", "isbn_10", "isbn_13", "isbn13"):
+        for alias in ("isbn", "isbn_10", "isbn_13", "isbn13", "isbn/uid", "uid"):
             if alias in row and row[alias]:
                 row["isbn"] = normalize_isbn(row[alias])
                 break

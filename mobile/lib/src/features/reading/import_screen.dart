@@ -253,6 +253,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           ],
           if (_rows.isNotEmpty) ...[
             const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _busy || selected == 0 ? null : _import,
+              icon: const Icon(Icons.download_done),
+              label: Text(
+                l10n.tr('Import %(count)s selected', {'count': selected}),
+              ),
+            ),
             Row(
               children: [
                 Expanded(
@@ -292,14 +299,6 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                 ),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _busy || selected == 0 ? null : _import,
-              icon: const Icon(Icons.download_done),
-              label: Text(
-                l10n.tr('Import %(count)s selected', {'count': selected}),
-              ),
-            ),
           ],
         ],
       ),

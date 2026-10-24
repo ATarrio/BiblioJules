@@ -149,6 +149,111 @@ def _sticky_fields(data: dict) -> dict:
     return sticky
 
 
+# Fields an online lookup may fill in on a book that is already in the library.
+# Only blank ones are touched, so the user's own data always wins.
+_LOOKUP_FIELDS = (
+    "title",
+    "subtitle",
+    "authors",
+    "publisher",
+    "published_date",
+    "page_count",
+    "language",
+    "description",
+    "cover_url",
+)
+
+# Translated labels used to tell the user which fields a lookup filled in.
+_LOOKUP_LABELS = {
+    "title": "Title",
+    "subtitle": "Subtitle",
+    "authors": "Authors",
+    "publisher": "Publisher",
+    "published_date": "Published",
+    "page_count": "Pages",
+    "language": "Language",
+    "description": "Description",
+    "cover_url": "Cover",
+}
+
+
+def _is_blank(value) -> bool:
+    """True for values that mean 'nothing here' on the book form."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, dict, set)):
+        return not value
+    if isinstance(value, (int, float)):
+        return value == 0
+    return False
+
+
+def _merge_lookup(current: dict, fresh: dict) -> tuple[dict, list[str]]:
+    """Fill the blank fields of ``current`` with values from ``fresh``.
+
+    Returns the merged form data and the keys that were filled, so the caller
+    can report what changed. Values the user already has are never replaced.
+    """
+    merged = dict(current)
+    filled: list[str] = []
+    for key in _LOOKUP_FIELDS:
+        if not _is_blank(merged.get(key)):
+            continue
+        value = fresh.get(key)
+        if _is_blank(value):
+            continue
+        merged[key] = value
+        filled.append(key)
+    return merged, filled
+
+
+# Fields the edit form always submits; when re-rendering it after a lookup we
+# take these from the request so unsaved typing is not thrown away.
+_FORM_TEXT_FIELDS = (
+    "isbn",
+    "title",
+    "subtitle",
+    "authors",
+    "publisher",
+    "published_date",
+    "page_count",
+    "language",
+    "description",
+    "notes",
+    "saga",
+    "saga_number",
+    "cover_url",
+    "cover_type",
+    "read_status",
+    "source",
+    "score",
+    "keep_open",
+)
+_FORM_ID_FIELDS = ("location_id", "status_id")
+
+
+def _with_unsaved_edits(current: dict, form: dict) -> dict:
+    """Overlay the values currently in the open edit form onto ``current``."""
+    merged = dict(current)
+    for key in _FORM_TEXT_FIELDS:
+        if key in form:
+            merged[key] = form.get(key)
+    for key in _FORM_ID_FIELDS:
+        if key not in form:
+            continue
+        value = form.get(key)
+        if value in (None, ""):
+            merged[key] = None
+            continue
+        try:
+            merged[key] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return merged
+
+
 # --------------------------------------------------------------------------- #
 # Scanning / creating
 # --------------------------------------------------------------------------- #
@@ -172,15 +277,45 @@ async def scan(request: Request, db: Session = Depends(get_db)):
     if existing:
         # An ISBN already in the library opens as an edit form; keep its own
         # location/status/notes rather than the bulk form's sticky choices.
+        # Online details the record is still missing are filled in so the user
+        # can review and save them — existing values are never overwritten.
+        current = book_to_form(existing)
+        # When the lookup comes from this book's own edit form, keep whatever
+        # the user has typed so far; from the add form, the stored book wins.
+        if str(form.get("id") or "") == str(existing.id):
+            current = _with_unsaved_edits(current, form)
+        data = await lookup_isbn(raw)
+        if not data:
+            return templates.TemplateResponse(
+                request,
+                "books/_form.html",
+                form_context(
+                    db,
+                    current,
+                    existing=existing,
+                    warning=_(
+                        "This ISBN is already in your library: “%s”. "
+                        "No extra details were found online."
+                    )
+                    % existing.title,
+                ),
+            )
+        merged, filled = _merge_lookup(current, book_to_form(data))
+        if filled:
+            labels = ", ".join(_(_LOOKUP_LABELS[key]) for key in filled)
+            message = _(
+                "This ISBN is already in your library: “%s”. "
+                "Filled in %s from the online catalogue — review and save to keep it."
+            ) % (existing.title, labels)
+        else:
+            message = _(
+                "This ISBN is already in your library: “%s”. "
+                "It already had everything the online catalogue knows."
+            ) % existing.title
         return templates.TemplateResponse(
             request,
             "books/_form.html",
-            form_context(
-                db,
-                book_to_form(existing),
-                existing=existing,
-                info=_("This ISBN is already in your library: “%s”.") % existing.title,
-            ),
+            form_context(db, merged, existing=existing, info=message),
         )
 
     if not is_valid_isbn(raw):

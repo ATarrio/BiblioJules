@@ -81,11 +81,15 @@ class WantlistView(QWidget):
         self.empty.setObjectName("Muted")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        move_btn = QPushButton(_("Move to catalog"))
+        move_btn.setProperty("variant", "primary")
+        move_btn.clicked.connect(self._move)
         remove_btn = QPushButton(_("Remove selected"))
         remove_btn.setProperty("variant", "danger")
         remove_btn.clicked.connect(self._remove)
         actions = QHBoxLayout()
         actions.addStretch(1)
+        actions.addWidget(move_btn)
         actions.addWidget(remove_btn)
 
         layout = QVBoxLayout(self)
@@ -210,7 +214,50 @@ class WantlistView(QWidget):
             return
         self.refresh()
 
-    def _action_failed(self, message: str) -> None:
+    def _move(self) -> None:
+        row = self.table.currentRow()
+        if row < 0:
+            self._show_error(_("Select an entry first."))
+            return
+        item = self.table.item(row, 0)
+        entry_id = item.data(_WANT_ID) if item else None
+        if not entry_id:
+            return
+        entry = self._rows[row] if 0 <= row < len(self._rows) else {}
+        title = str(entry.get("title") or "")
+        authors = entry.get("authors")
+        if isinstance(authors, list):
+            authors = ", ".join(str(a) for a in authors)
+        if isinstance(get_repo(), RemoteRepo):
+            run_blocking(
+                lambda: _move_entry(entry, get_repo()),
+                lambda _result: self.refresh(),
+                self._action_failed,
+            )
+            return
+        try:
+            _move_entry(entry, get_repo())
+        except Exception as exc:  # noqa: BLE001
+            self._action_failed(str(exc))
+            return
+        self.refresh()
+
+
+def _move_entry(entry: dict, repo) -> None:
+    """Create a book from a want-to-read entry with 'to_read' status."""
+    isbn = entry.get("isbn") or None
+    repo.create_book({
+        "isbn": isbn,
+        "title": entry.get("title", ""),
+        "authors": entry.get("authors", ""),
+        "publisher": entry.get("publisher"),
+        "read_status": "to_read",
+        "source": "want_list_import",
+    })
+    repo.remove_want(str(entry.get("id", "")))
+
+
+def _action_failed(self, message: str) -> None:
         self.add_btn.setEnabled(True)
         if self._deleted:
             return

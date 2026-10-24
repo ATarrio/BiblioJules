@@ -511,80 +511,39 @@ class _ProgressRow extends StatelessWidget {
   }
 }
 
-class _WantTab extends ConsumerWidget {
+class _WantTab extends ConsumerStatefulWidget {
   const _WantTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.localized;
-    final entries = ref.watch(wantListProvider);
-    return entries.when(
-      loading: () => const LoadingView(),
-      error: (error, stackTrace) => ErrorView(
-        message: describeError(context, error),
-        onRetry: () => ref.invalidate(wantListProvider),
-      ),
-      data: (items) => RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(wantListProvider);
-          try {
-            await ref.read(wantListProvider.future);
-          } on Object {
-            // Rendered by the async view.
-          }
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.tr('%(count)s book(s) to look for.', {
-                      'count': items.length,
-                    }),
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: kSlate500),
-                  ),
-                ),
-                FilledButton.icon(
-                  onPressed: () => _showAddDialog(context, ref),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: Text(l10n.tr('Add')),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (items.isEmpty)
-              _EmptyWantList(onAdd: () => _showAddDialog(context, ref))
-            else
-              for (final entry in items)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.bookmark_border),
-                    title: Text(entry.title),
-                    subtitle: Text(
-                      [
-                        if (entry.authors.isNotEmpty) entry.authors,
-                        if (entry.isbn != null && entry.isbn!.isNotEmpty)
-                          'ISBN ${entry.isbn}',
-                      ].join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: IconButton(
-                      tooltip: l10n.tr('Remove from want-to-read'),
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _remove(context, ref, entry),
-                    ),
-                  ),
-                ),
-          ],
-        ),
-      ),
-    );
+  ConsumerState<_WantTab> createState() => _WantTabState();
+}
+
+class _WantTabState extends ConsumerState<_WantTab> {
+  final Set<String> _selectedIds = {};
+
+  void _toggleSelection(String id, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        _selectedIds.add(id);
+      } else {
+        _selectedIds.remove(id);
+      }
+    });
   }
+
+  void _selectAll(List<WantEntry> items) {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(items.map((e) => e.id));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedIds.clear());
+  }
+
+  bool _isSelected(WantEntry entry) => _selectedIds.contains(entry.id);
 
   Future<void> _remove(
     BuildContext context,
@@ -606,7 +565,90 @@ class _WantTab extends ConsumerWidget {
       await ref.read(repoProvider).removeWant(entry.id);
       return true;
     }, successMessage: l10n.tr('Removed from the want-to-read list.'));
-    if (removed == true) ref.invalidate(wantListProvider);
+    if (removed == true) {
+      _selectedIds.remove(entry.id);
+      ref.invalidate(wantListProvider);
+    }
+  }
+
+  Future<void> _moveToCatalog(BuildContext context, WidgetRef ref,
+      WantEntry entry) async {
+    final l10n = context.localized;
+    final confirmed = await confirmAction(
+      context,
+      title: l10n.tr('Move to catalog'),
+      message: l10n.tr(
+        'Move “%(title)s” to your catalog with “to read” status?',
+        {'title': entry.title},
+      ),
+      confirmLabel: l10n.tr('Move'),
+    );
+    if (!confirmed || !context.mounted) return;
+
+    // Open the add book form pre-filled with this entry's data. The entry only
+    // leaves the want-to-read list once the book is actually saved, so backing
+    // out of the form (or a failed save) leaves it where it was.
+    final added = await context.pushNamed<bool>('book-new', extra: entry);
+    if (added != true || !context.mounted) return;
+
+    await runGuarded<bool>(context, ref, () async {
+      await ref.read(repoProvider).removeWant(entry.id);
+      return true;
+    });
+    _selectedIds.remove(entry.id);
+    ref.invalidate(wantListProvider);
+  }
+
+  Future<void> _moveSelectionToCatalog(BuildContext context, WidgetRef ref,
+      List<WantEntry> items) async {
+    final l10n = context.localized;
+    final selected = items.where((e) => _selectedIds.contains(e.id)).toList();
+    if (selected.isEmpty) return;
+
+    final confirmed = await confirmAction(
+      context,
+      title: l10n.tr('Move selection to catalog'),
+      message: l10n.tr(
+        'Move %(count)s book(s) to your catalog with “to read” status?',
+        {'count': selected.length},
+      ),
+      confirmLabel: l10n.tr('Move'),
+    );
+    if (!confirmed || !context.mounted) return;
+
+    final errors = <String>[];
+    for (final entry in selected) {
+      try {
+        await ref.read(repoProvider).createBook(<String, dynamic>{
+          'isbn': entry.isbn,
+          'title': entry.title,
+          'authors': entry.authors.isNotEmpty ? entry.authors : null,
+          'publisher': entry.publisher,
+          'read_status': 'to_read',
+          'source': 'want_list_import',
+        });
+        await ref.read(repoProvider).removeWant(entry.id);
+      } on Object catch (_) {
+        errors.add(entry.title);
+      }
+    }
+    if (context.mounted) {
+      setState(() => _selectedIds.clear());
+      ref.invalidate(wantListProvider);
+      if (errors.isNotEmpty) {
+        showSnack(
+          context,
+          l10n.tr('Some books could not be moved: %(titles)s', {
+            'titles': errors.join(', '),
+          }),
+          isError: true,
+        );
+      } else {
+        showSnack(context, l10n.tr('Moved %(count)s book(s) to catalog.', {
+          'count': selected.length,
+        }));
+      }
+    }
   }
 
   Future<void> _showAddDialog(BuildContext context, WidgetRef ref) async {
@@ -667,6 +709,133 @@ class _WantTab extends ConsumerWidget {
       title.dispose();
       authors.dispose();
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.localized;
+    final entries = ref.watch(wantListProvider);
+    return entries.when(
+      loading: () => const LoadingView(),
+      error: (error, stackTrace) => ErrorView(
+        message: describeError(context, error),
+        onRetry: () => ref.invalidate(wantListProvider),
+      ),
+      data: (items) => RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(wantListProvider);
+          try {
+            await ref.read(wantListProvider.future);
+          } on Object {
+            // Rendered by the async view.
+          }
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.tr('%(count)s book(s) to look for.', {
+                      'count': items.length,
+                    }),
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: kSlate500),
+                  ),
+                ),
+                if (_selectedIds.isNotEmpty)
+                  FilledButton.icon(
+                    onPressed: () =>
+                        _moveSelectionToCatalog(context, ref, items),
+                    icon: const Icon(Icons.login, size: 18),
+                    label: Text(
+                      l10n.tr('Move %(count)s selected', {
+                        'count': _selectedIds.length,
+                      }),
+                    ),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed: () => _showAddDialog(context, ref),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(l10n.tr('Add')),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              _EmptyWantList(onAdd: () => _showAddDialog(context, ref))
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_selectedIds.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              l10n.tr(
+                                '%(count)s book(s) selected.',
+                                {'count': _selectedIds.length},
+                              ),
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _clearSelection(),
+                            child: Text(l10n.tr('Clear selection')),
+                          ),
+                          TextButton(
+                            onPressed: () => _selectAll(items),
+                            child: Text(l10n.tr('Select all')),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ...items.map((entry) => Card(
+                    child: ListTile(
+                      leading: Checkbox(
+                        value: _isSelected(entry),
+                        onChanged: (v) => _toggleSelection(entry.id, v),
+                      ),
+                      title: Text(entry.title),
+                      subtitle: Text(
+                        [
+                          if (entry.authors.isNotEmpty) entry.authors,
+                          if (entry.isbn != null && entry.isbn!.isNotEmpty)
+                            'ISBN ${entry.isbn}',
+                        ].join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: l10n.tr('Move to catalog'),
+                            icon: const Icon(Icons.login, size: 18),
+                            onPressed: () =>
+                                _moveToCatalog(context, ref, entry),
+                          ),
+                          IconButton(
+                            tooltip: l10n.tr('Remove from want-to-read'),
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _remove(context, ref, entry),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

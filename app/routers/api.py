@@ -560,4 +560,42 @@ def delete_wantlist_entry(entry_id: str, request: Request):
     from ..services.stats import remove_want_entry
 
     remove_want_entry(entry_id=entry_id, user_id=_user_id(request))
-    return {"ok": True}
+
+
+@router.post("/wantlist/{entry_id}/move")
+def move_wantlist_to_catalog(entry_id: str, request: Request):
+    """Move a want-to-read entry to the catalog with 'to_read' status."""
+    from ..services.stats import load_want_list, remove_want_entry
+    from ..services import library as library_service
+
+    items = load_want_list(user_id=_user_id(request))
+    entry = next((e for e in items if str(e.get("id", "")) == str(entry_id)), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Want entry not found")
+
+    isbn = entry.get("isbn")
+    if not isbn:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot move to catalog: the entry has no ISBN.",
+        )
+
+    db = next(get_db())
+    try:
+        book = library_service.create_book(db, {
+            "isbn": isbn,
+            "title": entry.get("title", ""),
+            "authors": entry.get("authors", ""),
+            "publisher": entry.get("publisher"),
+            "read_status": "to_read",
+            "source": "want_list_import",
+        })
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A book with that ISBN already exists.") from exc
+
+    remove_want_entry(entry_id=entry_id, user_id=_user_id(request))
+    return {"ok": True, "book_id": book.id}

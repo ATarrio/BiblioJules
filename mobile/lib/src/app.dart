@@ -87,6 +87,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           initialData: state.extra is SearchResult
               ? state.extra as SearchResult
               : null,
+          initialWantEntry: state.extra is WantEntry
+              ? state.extra as WantEntry
+              : null,
         ),
       ),
       GoRoute(

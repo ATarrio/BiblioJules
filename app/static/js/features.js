@@ -191,20 +191,50 @@
     return false;
   }
 
+  async function moveWantEntry(entry) {
+    const id = entry.id || entry.isbn || entry.title;
+    try {
+      const res = await fetch(`/api/wantlist/${encodeURIComponent(id)}/move`, {
+        method: 'POST',
+        headers: writeHeaders(),
+      });
+      if (res.ok) return true;
+      const data = await res.json().catch(() => ({}));
+      alert(data.detail || 'Failed to move entry to catalog');
+    } catch (e) {
+      alert('Failed to move entry to catalog');
+    }
+    return false;
+  }
+
   function bindWantlist(host) {
     if (!host || host.dataset.wantlistBound === '1') return;
     host.dataset.wantlistBound = '1';
     host.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-want-remove]');
-      if (!btn) return;
-      const id = btn.getAttribute('data-want-remove');
-      (async () => {
-        const ok = await removeWantEntry({ id });
-        if (ok) {
-          const items = await loadWantlist();
-          renderWantlist(items, host);
-        }
-      })();
+      const removeBtn = e.target.closest('[data-want-remove]');
+      if (removeBtn) {
+        const id = removeBtn.getAttribute('data-want-remove');
+        (async () => {
+          const ok = await removeWantEntry({ id });
+          if (ok) {
+            const items = await loadWantlist();
+            renderWantlist(items, host);
+          }
+        })();
+        return;
+      }
+      const moveBtn = e.target.closest('[data-want-move]');
+      if (moveBtn) {
+        const id = moveBtn.getAttribute('data-want-move');
+        (async () => {
+          const ok = await moveWantEntry({ id });
+          if (ok) {
+            const items = await loadWantlist();
+            renderWantlist(items, host);
+          }
+        })();
+        return;
+      }
     });
   }
 
@@ -232,6 +262,13 @@
             `${item.publisher ? ' · ' + escapeHtml(item.publisher) : ''}` +
           `</div>` +
         `</div>` +
+        `<button data-want-move="${escapeHtml(item.id || item.isbn || item.title)}"` +
+          ` class="rounded-lg p-1.5 text-slate-400 opacity-0 transition-opacity hover:text-brand-600 hover:opacity-100 group-hover:opacity-100 mr-1"` +
+          ` title="${t('Move to catalog')}">` +
+          `<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">` +
+            `<path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>` +
+          `</svg>` +
+        `</button>` +
         `<button data-want-remove="${escapeHtml(item.id || item.isbn || item.title)}"` +
           ` class="rounded-lg p-1.5 text-slate-400 opacity-0 transition-opacity hover:text-red-500 hover:opacity-100 group-hover:opacity-100"` +
           ` title="${t('Remove from want-to-read')}">` +

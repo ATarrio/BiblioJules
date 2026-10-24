@@ -103,7 +103,7 @@ List<ImportRow> parseImportCsv(String text) {
         break;
       }
     }
-    for (final alias in const ['isbn', 'isbn_10', 'isbn_13', 'isbn13']) {
+    for (final alias in const ['isbn', 'isbn_10', 'isbn_13', 'isbn13', 'isbn/uid', 'uid']) {
       final value = '${row[alias] ?? ''}'.trim();
       if (value.isNotEmpty) {
         row['isbn'] = normalizeIsbn(value);
@@ -318,6 +318,7 @@ Future<ImportOutcome> importRows(
             WantEntry(
               id: newWantId(),
               title: title,
+              isbn: isbn,
               authors: authors,
               publisher: publisher.isEmpty ? null : publisher,
               addedAt: DateTime.now().toUtc().toIso8601String(),
