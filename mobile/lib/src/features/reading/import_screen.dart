@@ -22,8 +22,10 @@ class ImportScreen extends ConsumerStatefulWidget {
 }
 
 class _ImportScreenState extends ConsumerState<ImportScreen> {
+  final List<ImportRow> _allRows = [];
   final List<ImportRow> _rows = [];
   String? _fileName;
+  bool _onlyToRead = false;
   bool _busy = false;
   int _done = 0;
   int _total = 0;
@@ -61,9 +63,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         if (!mounted) return;
         setState(() {
           _fileName = 'import.csv';
-          _rows
-            ..clear()
-            ..addAll(rows);
+          _allRows.clear();
+          _allRows.addAll(rows);
+          _filterRows();
         });
       } finally {
         if (await file.exists()) await file.delete();
@@ -168,6 +170,29 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     });
   }
 
+  void _toggleOnlyToRead(bool? value) {
+    setState(() {
+      _onlyToRead = value ?? false;
+      _filterRows();
+    });
+  }
+
+  void _filterRows() {
+    _rows.clear();
+    for (final row in _allRows) {
+      if (_onlyToRead &&
+          '${row.data['read_status'] ?? ''}'.trim() != 'to_read') {
+        continue;
+      }
+      _rows.add(row);
+    }
+    // Re-select all rows after re-filtering, matching desktop behaviour
+    // where every row starts selected.
+    for (final row in _rows) {
+      row.selected = true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.localized;
@@ -205,6 +230,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                 child: Text(l10n.tr('Choose')),
               ),
             ),
+          ),
+          CheckboxListTile(
+            value: _onlyToRead,
+            onChanged: _busy ? null : _toggleOnlyToRead,
+            title: Text(l10n.tr('Only import books with "to-read" status')),
+            controlAffinity: ListTileControlAffinity.leading,
           ),
           if (_busy) ...[
             const SizedBox(height: 12),
