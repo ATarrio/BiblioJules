@@ -48,6 +48,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   final _saga = TextEditingController();
   final _notes = TextEditingController();
   final _description = TextEditingController();
+  final _collaborators = TextEditingController();
+  final _translators = TextEditingController();
+  final _illustrators = TextEditingController();
 
   String? _coverType;
   String? _readStatus;
@@ -115,6 +118,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       _saga,
       _notes,
       _description,
+      _collaborators,
+      _translators,
+      _illustrators,
     ]) {
       controller.dispose();
     }
@@ -147,6 +153,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         _locationId = book.locationId;
         _statusId = book.statusId;
         _source = book.source;
+        _collaborators.text = book.collaborators ?? '';
+        _translators.text = book.translators ?? '';
+        _illustrators.text = book.illustrators ?? '';
         _loading = false;
       });
     } on ApiException catch (error) {
@@ -182,6 +191,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       'location_id': _locationId,
       'status_id': _statusId,
       'notes': _blankToNull(_notes.text),
+      'collaborators': _blankToNull(_collaborators.text),
+      'translators': _blankToNull(_translators.text),
+      'illustrators': _blankToNull(_illustrators.text),
     };
     if (_source != null) payload['source'] = _source;
     return payload;
@@ -445,9 +457,83 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            CoverTypeChips(
-              value: _coverType,
-              onChanged: (value) => setState(() => _coverType = value),
+            // Folded-away details so the add form stays compact on mobile.
+            ExpansionTile(
+              initiallyExpanded: false,
+              title: Text(
+                l10n.tr('More details'),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              subtitle: Text(
+                l10n.tr('Cover type, cover URL, description, notes and contributors.'),
+                style: const TextStyle(fontSize: 12, color: kSlate500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              children: [
+                CoverTypeChips(
+                  value: _coverType,
+                  onChanged: (value) => setState(() => _coverType = value),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BookCover(url: _coverUrl.text, title: _title.text, width: 56, height: 84),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _coverUrl,
+                        keyboardType: TextInputType.url,
+                        decoration: InputDecoration(labelText: l10n.tr('Cover URL')),
+                        onChanged: (value) => setState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _description,
+                  maxLines: 4,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(labelText: l10n.tr('Description')),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _notes,
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(labelText: l10n.tr('Notes')),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _collaborators,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: l10n.tr('Collaborators'),
+                    helperText: l10n.tr('Separate several names with commas.'),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _translators,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: l10n.tr('Translators'),
+                    helperText: l10n.tr('Separate several names with commas.'),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _illustrators,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: l10n.tr('Illustrators'),
+                    helperText: l10n.tr('Separate several names with commas.'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
             const SizedBox(height: 20),
             ReadStatusChips(
@@ -573,36 +659,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 );
                 if (picked != null) setState(() => _locationId = picked.value);
               },
-            ),
-            const SizedBox(height: 20),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                BookCover(url: _coverUrl.text, title: _title.text, width: 56, height: 84),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _coverUrl,
-                    keyboardType: TextInputType.url,
-                    decoration: InputDecoration(labelText: l10n.tr('Cover URL')),
-                    onChanged: (value) => setState(() {}),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _description,
-              maxLines: 4,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(labelText: l10n.tr('Description')),
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _notes,
-              maxLines: 3,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(labelText: l10n.tr('Notes')),
             ),
             const SizedBox(height: 28),
             FilledButton.icon(

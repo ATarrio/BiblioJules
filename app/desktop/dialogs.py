@@ -178,6 +178,12 @@ class BookDialog(QDialog):
         self.description.setFixedHeight(90)
         self.notes = QPlainTextEdit()
         self.notes.setFixedHeight(60)
+        self.collaborators = QPlainTextEdit()
+        self.collaborators.setFixedHeight(60)
+        self.translators = QPlainTextEdit()
+        self.translators.setFixedHeight(60)
+        self.illustrators = QPlainTextEdit()
+        self.illustrators.setFixedHeight(60)
 
         form.addRow(_("Title"), self.title)
         form.addRow(_("Subtitle"), self.subtitle)
@@ -196,6 +202,9 @@ class BookDialog(QDialog):
         form.addRow(_("Status"), self.status)
         form.addRow(_("Description"), self.description)
         form.addRow(_("Notes"), self.notes)
+        form.addRow(_("Collaborators"), self.collaborators)
+        form.addRow(_("Translators"), self.translators)
+        form.addRow(_("Illustrators"), self.illustrators)
 
         self.message = QLabel("")
         self.message.setObjectName("Hint")
@@ -276,6 +285,9 @@ class BookDialog(QDialog):
         self.saga_number.setValue(book.get("saga_number") or 0)
         self.description.setPlainText(book.get("description") or "")
         self.notes.setPlainText(book.get("notes") or "")
+        self.collaborators.setPlainText(book.get("collaborators") or "")
+        self.translators.setPlainText(book.get("translators") or "")
+        self.illustrators.setPlainText(book.get("illustrators") or "")
         self._source = book.get("source")
         if book.get("location_id") is not None:
             index = self.location.findData(book["location_id"])
@@ -372,6 +384,9 @@ class BookDialog(QDialog):
             self.score,
             self.saga_number,
             self.description,
+            self.collaborators,
+            self.translators,
+            self.illustrators,
         ):
             if isinstance(widget, (QLineEdit, QPlainTextEdit)):
                 widget.clear()
@@ -423,6 +438,9 @@ class BookDialog(QDialog):
             "saga_number": self.saga_number.value() or None,
             "description": self.description.toPlainText().strip(),
             "notes": self.notes.toPlainText().strip(),
+            "collaborators": self.collaborators.toPlainText().strip(),
+            "translators": self.translators.toPlainText().strip(),
+            "illustrators": self.illustrators.toPlainText().strip(),
             "location_id": self.location.currentData(),
             "status_id": self.status.currentData(),
         }
@@ -525,6 +543,24 @@ class BookDetailsDialog(QDialog):
         self.notes.setWordWrap(True)
         self.notes.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
+        self.collaborators_label = QLabel(_("Collaborators"))
+        self.collaborators_label.setObjectName("SectionTitle")
+        self.collaborators = QLabel("")
+        self.collaborators.setWordWrap(True)
+        self.collaborators.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        self.translators_label = QLabel(_("Translators"))
+        self.translators_label.setObjectName("SectionTitle")
+        self.translators = QLabel("")
+        self.translators.setWordWrap(True)
+        self.translators.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        self.illustrators_label = QLabel(_("Illustrators"))
+        self.illustrators_label.setObjectName("SectionTitle")
+        self.illustrators = QLabel("")
+        self.illustrators.setWordWrap(True)
+        self.illustrators.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
         # --- loan history -------------------------------------------------- #
         self.loans_label = QLabel(_("Loan history"))
         self.loans_label.setObjectName("SectionTitle")
@@ -558,6 +594,12 @@ class BookDetailsDialog(QDialog):
         header_col.addWidget(self.description)
         header_col.addWidget(self.notes_label)
         header_col.addWidget(self.notes)
+        header_col.addWidget(self.collaborators_label)
+        header_col.addWidget(self.collaborators)
+        header_col.addWidget(self.translators_label)
+        header_col.addWidget(self.translators)
+        header_col.addWidget(self.illustrators_label)
+        header_col.addWidget(self.illustrators)
         header_col.addWidget(self.loans_label)
         header_col.addWidget(self.loans)
         header_col.addStretch(1)
@@ -638,6 +680,15 @@ class BookDetailsDialog(QDialog):
         self.notes.setText(book.get("notes") or "")
         self.notes.setVisible(bool(book.get("notes")))
         self.notes_label.setVisible(bool(book.get("notes")))
+        self.collaborators.setText(book.get("collaborators") or "")
+        self.collaborators.setVisible(bool(book.get("collaborators")))
+        self.collaborators_label.setVisible(bool(book.get("collaborators")))
+        self.translators.setText(book.get("translators") or "")
+        self.translators.setVisible(bool(book.get("translators")))
+        self.translators_label.setVisible(bool(book.get("translators")))
+        self.illustrators.setText(book.get("illustrators") or "")
+        self.illustrators.setVisible(bool(book.get("illustrators")))
+        self.illustrators_label.setVisible(bool(book.get("illustrators")))
 
         self.loans.setRowCount(len(loans))
         for row, item in enumerate(loans):

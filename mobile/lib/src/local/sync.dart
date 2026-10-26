@@ -68,7 +68,7 @@ const List<String> _statusFields = <String>[
 
 /// Colours a snapshot status row may carry: the same ``#rgb``/``#rrggbb``
 /// shapes the web templates paste into a ``style`` attribute.
-const RegExp _hexColor = RegExp(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');
+final RegExp _hexColor = RegExp(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');
 
 const List<String> _locationFields = <String>['name', 'kind', 'description'];
 
@@ -89,6 +89,9 @@ const List<String> _bookFields = <String>[
   'saga_number',
   'source',
   'notes',
+  'collaborators',
+  'translators',
+  'illustrators',
 ];
 
 const List<String> _loanFields = <String>[
@@ -688,7 +691,7 @@ Map<String, Object?> _sanitizeStatusFields(Map<String, Object?> values) {
   final safe = <String, Object?>{...values};
   if (safe.containsKey('color')) {
     final color = safe['color'];
-    final valid = color is String && _hexColor.matchEntire(color) != null;
+    final valid = color is String && _hexColor.hasMatch(color);
     safe['color'] = valid ? color : '#64748b';
   }
   if (safe['icon'] is String && (safe['icon'] as String).length > 16) {

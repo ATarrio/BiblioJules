@@ -47,6 +47,9 @@ def book_to_dict(book: Book) -> dict:
         "saga_number": book.saga_number,
         "source": book.source,
         "notes": book.notes,
+        "collaborators": book.collaborators,
+        "translators": book.translators,
+        "illustrators": book.illustrators,
         # The ids sit next to their nested objects so form- style clients can
         # preselect a combo box without digging into the nested dict.
         "location_id": book.location_id,

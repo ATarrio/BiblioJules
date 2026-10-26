@@ -305,6 +305,9 @@ void main() {
           await db.execute('ALTER TABLE $table DROP COLUMN updated_at');
         }
       }
+      for (final column in ['collaborators', 'translators', 'illustrators']) {
+        await db.execute('ALTER TABLE books DROP COLUMN $column');
+      }
       await db.execute('DROP TABLE IF EXISTS sync_tombstones');
       await db.execute('PRAGMA user_version = 1');
     } finally {

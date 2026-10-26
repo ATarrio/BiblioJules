@@ -23,7 +23,10 @@ library;
 /// * 3 — ``reading_goals``: reading objectives move from a side JSON file into
 ///   the database, so the single-file export carries them and a reinstalled app
 ///   gets its objectives back.
-const int kLibrarySchemaVersion = 3;
+/// * 4 — the contributor columns (``collaborators``, ``translators``,
+///   ``illustrators``), mirroring the server's ``f7a8b9c0d1e2_book_contributors``
+///   migration.
+const int kLibrarySchemaVersion = 4;
 
 /// Every table and index, in creation order.
 ///
@@ -107,6 +110,9 @@ const List<String> kLibrarySchemaStatements = <String>[
     status_id INTEGER REFERENCES statuses (id) ON DELETE SET NULL,
     source VARCHAR(40),
     notes TEXT,
+    collaborators TEXT,
+    translators TEXT,
+    illustrators TEXT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     sync_id VARCHAR(32)
@@ -236,6 +242,19 @@ const List<String> kGoalsMigrationStatements = <String>[
   ''',
   'CREATE INDEX IF NOT EXISTS ix_reading_goals_user_id ON reading_goals (user_id)',
   'CREATE INDEX IF NOT EXISTS ix_reading_goals_year ON reading_goals (year)',
+];
+
+/// The column statements that upgrade a version-3 library to version 4.
+///
+/// The three contributor columns (people beyond the listed authors, stored as
+/// comma-separated names) mirror ``app/models/book.py`` and are added in the
+/// same order the server's migration uses, so an upgraded file and a fresh
+/// one look the same to a merge. All three are nullable ``TEXT``, so ``ALTER
+/// TABLE`` is enough; existing rows just stay empty.
+const List<String> kContributorsMigrationStatements = <String>[
+  'ALTER TABLE books ADD COLUMN collaborators TEXT',
+  'ALTER TABLE books ADD COLUMN translators TEXT',
+  'ALTER TABLE books ADD COLUMN illustrators TEXT',
 ];
 
 /// The system statuses a brand-new library starts with.

@@ -64,6 +64,12 @@ class Book(SyncIdMixin, Base):
 
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # People who helped bring the book into being, beyond the listed authors,
+    # stored as comma-separated names (mirrors the form's free-text fields).
+    collaborators: Mapped[str | None] = mapped_column(Text)
+    translators: Mapped[str | None] = mapped_column(Text)
+    illustrators: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

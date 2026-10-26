@@ -194,6 +194,21 @@
       <textarea name="notes" aria-label="{{ _('Notes') }}" rows="2" placeholder="{{ _('Signed copy, reading now, borrowed from…') }}"
                 class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('notes') or '' }}</textarea>
     </div>
+    <div>
+      <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Collaborators') }}</label>
+      <textarea name="collaborators" aria-label="{{ _('Collaborators') }}" rows="2" placeholder="{{ _('Separate several names with commas.') }}"
+                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('collaborators') or '' }}</textarea>
+    </div>
+    <div>
+      <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Translators') }}</label>
+      <textarea name="translators" aria-label="{{ _('Translators') }}" rows="2" placeholder="{{ _('Separate several names with commas.') }}"
+                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('translators') or '' }}</textarea>
+    </div>
+    <div>
+      <label class="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{{ _('Illustrators') }}</label>
+      <textarea name="illustrators" aria-label="{{ _('Illustrators') }}" rows="2" placeholder="{{ _('Separate several names with commas.') }}"
+                class="w-full rounded-lg border border-slate-300 bg-card px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">{{ form.get('illustrators') or '' }}</textarea>
+    </div>
 
     <input type="hidden" name="source" value="{{ form.get('source') or 'manual' }}">
 

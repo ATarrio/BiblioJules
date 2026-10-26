@@ -105,6 +105,9 @@ void main() {
         'saga': 'Dune',
         'saga_number': 1,
         'notes': 'signed',
+        'collaborators': 'Editor: Me',
+        'translators': 'Spanish: Someone',
+        'illustrators': 'Someone Else',
         'source': 'openlibrary',
       });
 
@@ -124,6 +127,9 @@ void main() {
       expect(book.saga, 'Dune');
       expect(book.sagaNumber, 1);
       expect(book.notes, 'signed');
+      expect(book.collaborators, 'Editor: Me');
+      expect(book.translators, 'Spanish: Someone');
+      expect(book.illustrators, 'Someone Else');
       expect(book.source, 'openlibrary');
     });
 

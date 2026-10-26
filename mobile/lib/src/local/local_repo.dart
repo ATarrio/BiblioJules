@@ -118,6 +118,19 @@ class LocalRepo implements LibraryRepo {
             await db.execute(statement);
           }
         }
+        // Version 3 → 4: the contributor columns, mirroring the server's
+        // ``f7a8b9c0d1e2_book_contributors`` migration.
+        if (oldVersion < 4) {
+          for (final statement in kContributorsMigrationStatements) {
+            try {
+              await db.execute(statement);
+            } on DatabaseException catch (error) {
+              // A file that got half-way through an earlier attempt is fine:
+              // adding an existing column is the one failure worth ignoring.
+              if (!'$error'.toLowerCase().contains('duplicate column')) rethrow;
+            }
+          }
+        }
       },
     );
     _db = database;
@@ -960,6 +973,9 @@ class LocalRepo implements LibraryRepo {
       'cover_url',
       'notes',
       'source',
+      'collaborators',
+      'translators',
+      'illustrators',
     ]) {
       if (has(field)) {
         final value = data[field];

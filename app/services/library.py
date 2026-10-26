@@ -153,7 +153,8 @@ def apply_book_data(db: Session, book: Book, data: dict) -> Book:
         book.title = (data.get("title") or "").strip() or "Untitled"
 
     for field in ("subtitle", "description", "language",
-                  "cover_url", "notes", "source"):
+                  "cover_url", "notes", "source",
+                  "collaborators", "translators", "illustrators"):
         if field in data:
             value = data.get(field)
             if field == "cover_url":

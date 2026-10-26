@@ -35,6 +35,9 @@ class Book {
     this.activeLoan,
     this.createdAt,
     this.updatedAt,
+    this.collaborators,
+    this.translators,
+    this.illustrators,
   });
 
   final int id;
@@ -69,6 +72,12 @@ class Book {
   final String? createdAt;
   final String? updatedAt;
 
+  /// People who helped bring the book into being beyond the listed authors,
+  /// stored as comma-separated names.
+  final String? collaborators;
+  final String? translators;
+  final String? illustrators;
+
   bool get isLoaned => activeLoan != null;
 
   /// "Unknown author" when we have nothing, mirroring the server's label.
@@ -96,6 +105,9 @@ class Book {
       sagaNumber: (json['saga_number'] as num?)?.toInt(),
       source: json['source'] as String?,
       notes: json['notes'] as String?,
+      collaborators: json['collaborators'] as String?,
+      translators: json['translators'] as String?,
+      illustrators: json['illustrators'] as String?,
       locationId: (json['location_id'] as num?)?.toInt(),
       statusId: (json['status_id'] as num?)?.toInt(),
       location: json['location'] == null
@@ -137,6 +149,9 @@ class Book {
       'location_id': locationId,
       'status_id': statusId,
       'notes': notes,
+      'collaborators': collaborators,
+      'translators': translators,
+      'illustrators': illustrators,
     };
     if (source != null) payload['source'] = source;
     return payload;
@@ -159,6 +174,9 @@ class Book {
     String? Function()? saga,
     int? Function()? sagaNumber,
     String? Function()? notes,
+    String? Function()? collaborators,
+    String? Function()? translators,
+    String? Function()? illustrators,
     int? Function()? locationId,
     int? Function()? statusId,
     String? source,
@@ -183,6 +201,9 @@ class Book {
       sagaNumber: sagaNumber?.call() ?? this.sagaNumber,
       source: source ?? this.source,
       notes: notes?.call() ?? this.notes,
+      collaborators: collaborators?.call() ?? this.collaborators,
+      translators: translators?.call() ?? this.translators,
+      illustrators: illustrators?.call() ?? this.illustrators,
       locationId: locationId?.call() ?? this.locationId,
       statusId: statusId?.call() ?? this.statusId,
       location: location,

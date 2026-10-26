@@ -124,6 +124,9 @@ Map<String, dynamic> bookToJson(
   'saga_number': row['saga_number'],
   'source': row['source'],
   'notes': row['notes'],
+  'collaborators': row['collaborators'],
+  'translators': row['translators'],
+  'illustrators': row['illustrators'],
   // The ids sit next to their nested objects, exactly as the API returns them,
   // so a client can preselect a dropdown without digging into the object.
   'location_id': row['location_id'],

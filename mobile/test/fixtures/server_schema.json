@@ -32,6 +32,9 @@
       "status_id",
       "source",
       "notes",
+      "collaborators",
+      "translators",
+      "illustrators",
       "created_at",
       "updated_at",
       "sync_id"

@@ -32,6 +32,9 @@ class BookIn(BaseModel):
     location_id: int | None = None
     status_id: int | None = None
     notes: str | None = None
+    collaborators: str | None = None
+    translators: str | None = None
+    illustrators: str | None = None
     source: str | None = None
 
 
