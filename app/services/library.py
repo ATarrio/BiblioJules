@@ -18,7 +18,7 @@ from ..i18n import _
 from ..models import Author, Book, Loan, Location, Publisher, Status
 from ..models.common import utc_now
 from . import tombstones
-from .isbn_lookup import extract_year, is_valid_isbn, normalize_isbn
+from .isbn_lookup import extract_year, normalize_isbn
 
 # --------------------------------------------------------------------------- #
 # Small helpers
@@ -33,8 +33,6 @@ BOOK_LOAD_OPTIONS = (
 
 
 def slugify(value: str) -> str:
-    import re
-
     value = re.sub(r"[^\w\s-]", "", (value or "").lower()).strip()
     return re.sub(r"[\s_-]+", "-", value) or "status"
 
@@ -307,8 +305,9 @@ def find_by_isbn(db: Session, isbn: str) -> Book | None:
     return db.scalar(select(Book).where(Book.isbn == isbn).options(*BOOK_LOAD_OPTIONS))
 
 
-def query_books(
+def _apply_book_filters(
     db: Session,
+    stmt,
     *,
     search: str | None = None,
     status_id: int | None = None,
@@ -318,11 +317,8 @@ def query_books(
     loaned: str | None = None,  # "loaned" | "available" | None
     saga: str | None = None,
     read_status: str | None = None,
-    sort: str = "recent",
-    descending: bool | None = None,  # None keeps each sort's natural direction
-) -> list[Book]:
-    stmt = select(Book).options(*BOOK_LOAD_OPTIONS)
-
+):
+    """Add the catalog filters to ``stmt``; ``None`` means "match nothing"."""
     if search:
         # LIKE wildcards in the query must match as text, not as operators:
         # escape them so ``%`` or ``a_b`` behave literally.
@@ -350,7 +346,7 @@ def query_books(
         if location is None:
             # A deleted location must match nothing — skipping the filter
             # would silently show the whole catalog instead.
-            return []
+            return None
         stmt = stmt.where(Book.location_id.in_(location.descendant_ids()))
     if saga:
         stmt = stmt.where(func.lower(Book.saga) == saga.strip().lower())
@@ -363,6 +359,39 @@ def query_books(
         stmt = stmt.join(Book.loans).where(Loan.returned_at.is_(None)).distinct()
     elif loaned == "available":
         stmt = stmt.where(~Book.loans.any(Loan.returned_at.is_(None)))
+    return stmt
+
+
+def query_books(
+    db: Session,
+    *,
+    search: str | None = None,
+    status_id: int | None = None,
+    location_id: int | None = None,
+    author_id: int | None = None,
+    publisher_id: int | None = None,
+    loaned: str | None = None,  # "loaned" | "available" | None
+    saga: str | None = None,
+    read_status: str | None = None,
+    sort: str = "recent",
+    descending: bool | None = None,  # None keeps each sort's natural direction
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[Book]:
+    stmt = _apply_book_filters(
+        db,
+        select(Book).options(*BOOK_LOAD_OPTIONS),
+        search=search,
+        status_id=status_id,
+        location_id=location_id,
+        author_id=author_id,
+        publisher_id=publisher_id,
+        loaned=loaned,
+        saga=saga,
+        read_status=read_status,
+    )
+    if stmt is None:
+        return []
 
     if sort == "title":
         order = func.lower(Book.title)
@@ -393,19 +422,61 @@ def query_books(
             Book.id.desc() if newest_first else Book.id.asc(),
         )
 
-    books = list(db.scalars(stmt).unique().all())
     if sort == "author":
+        books = list(db.scalars(stmt).unique().all())
+
         def by_author(book: Book) -> tuple[str, str]:
             names = [author.name.casefold() for author in book.authors if author.name]
             return (min(names) if names else "", (book.title or "").casefold())
 
         books.sort(key=by_author, reverse=bool(descending))
-    return books
+        if offset:
+            books = books[offset:]
+        if limit is not None:
+            books = books[:limit]
+        return books
+
+    if offset:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return list(db.scalars(stmt).unique().all())
+
+
+def count_books(db: Session, **filters) -> int:
+    """Number of books matching the same filters as :func:`query_books`."""
+    stmt = _apply_book_filters(
+        db,
+        select(Book.id),
+        search=filters.get("search"),
+        status_id=filters.get("status_id"),
+        location_id=filters.get("location_id"),
+        author_id=filters.get("author_id"),
+        publisher_id=filters.get("publisher_id"),
+        loaned=filters.get("loaned"),
+        saga=filters.get("saga"),
+        read_status=filters.get("read_status"),
+    )
+    if stmt is None:
+        return 0
+    return db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
 
 # --------------------------------------------------------------------------- #
 # Loans
 # --------------------------------------------------------------------------- #
+def list_active_loans(db: Session) -> list[Loan]:
+    """Active loans with their book loaded, ready for a dashboard table."""
+    return list(
+        db.scalars(
+            select(Loan)
+            .where(Loan.returned_at.is_(None))
+            .options(selectinload(Loan.book))
+            .order_by(Loan.due_at.asc().nullslast(), Loan.lent_at.asc())
+        ).all()
+    )
+
+
 def lend_book(
     db: Session,
     book: Book,

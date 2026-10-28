@@ -38,6 +38,7 @@ def parse_filters(request: Request) -> dict:
         "read_status": (qp.get("read_status") or "").strip() or None,
         "sort": qp.get("sort") or "recent",
         "dir": direction if direction in ("asc", "desc") else None,
+        "page": max(1, _opt_int(qp.get("page")) or 1),
     }
 
 
@@ -105,12 +106,40 @@ def _sort_links(filters: dict) -> list[dict]:
     return links
 
 
+def _page_url(filters: dict, page: int) -> str:
+    """A catalog URL for one page, keeping every active filter and sort."""
+    params = {
+        param: filters[key]
+        for param, key in _SORT_FILTER_PARAMS
+        if filters.get(key) not in (None, "")
+    }
+    params["sort"] = filters.get("sort") or "recent"
+    if filters.get("dir"):
+        params["dir"] = filters["dir"]
+    if page > 1:
+        params["page"] = page
+    return "/books?" + urlencode(params)
+
+
+PER_PAGE = 60
+
+
 def catalog_context(db: Session, filters: dict) -> dict:
-    query = dict(filters)
-    direction = query.pop("dir", None)
+    query = {
+        key: value
+        for key, value in filters.items()
+        if key not in ("dir", "page")
+    }
+    direction = filters.get("dir")
     if direction is not None:
         query["descending"] = direction == "desc"
-    books = library.query_books(db, **query)
+
+    total = library.count_books(db, **query)
+    pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    page = min(max(1, int(filters.get("page") or 1)), pages)
+    books = library.query_books(
+        db, limit=PER_PAGE, offset=(page - 1) * PER_PAGE, **query
+    )
     return {
         "books": books,
         "filters": filters,
@@ -120,13 +149,17 @@ def catalog_context(db: Session, filters: dict) -> dict:
         "authors": library.list_authors(db),
         "publishers": library.list_publishers(db),
         "sagas": library.list_sagas(db),
-        "book_count": len(books),
+        "book_count": total,
+        "page": page,
+        "pages": pages,
+        "prev_url": _page_url(filters, page - 1) if page > 1 else None,
+        "next_url": _page_url(filters, page + 1) if page < pages else None,
     }
 
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
-    recent = library.query_books(db, sort="recent")[:6]
+    recent = library.query_books(db, sort="recent", limit=6)
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -134,12 +167,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "stats": library.get_stats(db),
             "status_counts": library.status_counts(db),
             "recent": recent,
-            "active_loans": [
-                loan
-                for book in library.query_books(db, loaned="loaned")
-                for loan in [book.active_loan]
-                if loan
-            ],
+            "active_loans": library.list_active_loans(db),
         },
     )
 
@@ -233,7 +261,7 @@ def settings_page(request: Request):
 
 
 @router.get("/reading", response_class=HTMLResponse)
-def reading_page(request: Request, db: Session = Depends(get_db)):
+def reading_page(request: Request):
     """Personal reading stats dashboard page (per-device, local only)."""
     return templates.TemplateResponse(
         request, "reading.html", {"current_year": date.today().year}
@@ -241,13 +269,13 @@ def reading_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/reading-goals", response_class=HTMLResponse)
-def reading_goals_page(request: Request, db: Session = Depends(get_db)):
+def reading_goals_page(request: Request):
     """Goals live on the reading page; keep the old URL working."""
     return RedirectResponse("/reading#reading-goals-host", status_code=303)
 
 
 @router.get("/wantlist", response_class=HTMLResponse)
-def wantlist_page(request: Request, db: Session = Depends(get_db)):
+def wantlist_page(request: Request):
     """Personal want-to-read list (per-device, local only)."""
     return templates.TemplateResponse(request, "wantlist.html", {})
 

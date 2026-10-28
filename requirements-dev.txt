@@ -1,0 +1,8 @@
+# Development-only tools. Install alongside the app requirements:
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# Nothing here is needed to run BiblioJules.
+
+pytest>=8.3,<9
+ruff>=0.9,<1

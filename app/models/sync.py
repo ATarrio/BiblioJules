@@ -25,10 +25,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..database import Base
 from .common import utc_now
 
-#: The tables whose deletions are recorded. ``book_authors`` is absent on
-#: purpose: a book's author set is carried by the book row itself.
-TOMBSTONE_TABLES = ("books", "statuses", "locations")
-
 
 class SyncTombstone(Base):
     __tablename__ = "sync_tombstones"

@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -24,14 +24,9 @@ from ..services import auth
 from ..services import sync as sync_service
 from ..services.serializers import user_to_dict
 from ..templating import templates
+from .common import redirect as _redirect
 
 router = APIRouter()
-
-
-def _redirect(request: Request, url: str) -> Response:
-    if request.headers.get("HX-Request"):
-        return Response(status_code=204, headers={"HX-Redirect": url})
-    return Response(status_code=303, headers={"Location": url})
 
 
 def _current_user(request: Request) -> User:

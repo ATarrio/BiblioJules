@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api_exception.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
+import '../../core/util.dart';
 import '../../theme.dart';
 import '../../widgets/app_bar.dart';
 import '../../widgets/book_cover.dart';
@@ -166,34 +167,29 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     }
   }
 
-  String? _blankToNull(String value) {
-    final trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
   Map<String, dynamic> _payload() {
     final payload = <String, dynamic>{
-      'isbn': _blankToNull(_isbn.text),
+      'isbn': blankToNull(_isbn.text),
       'title': _title.text.trim(),
-      'subtitle': _blankToNull(_subtitle.text),
+      'subtitle': blankToNull(_subtitle.text),
       'authors': _authors.text.trim(),
-      'publisher': _blankToNull(_publisher.text),
-      'published_date': _blankToNull(_publishedDate.text),
-      'description': _blankToNull(_description.text),
+      'publisher': blankToNull(_publisher.text),
+      'published_date': blankToNull(_publishedDate.text),
+      'description': blankToNull(_description.text),
       'page_count': int.tryParse(_pageCount.text.trim()),
-      'language': _blankToNull(_language.text),
-      'cover_url': _blankToNull(_coverUrl.text),
+      'language': blankToNull(_language.text),
+      'cover_url': blankToNull(_coverUrl.text),
       'cover_type': _coverType,
       'read_status': _readStatus,
       'score': _score,
-      'saga': _blankToNull(_saga.text),
+      'saga': blankToNull(_saga.text),
       'saga_number': _sagaNumber,
       'location_id': _locationId,
       'status_id': _statusId,
-      'notes': _blankToNull(_notes.text),
-      'collaborators': _blankToNull(_collaborators.text),
-      'translators': _blankToNull(_translators.text),
-      'illustrators': _blankToNull(_illustrators.text),
+      'notes': blankToNull(_notes.text),
+      'collaborators': blankToNull(_collaborators.text),
+      'translators': blankToNull(_translators.text),
+      'illustrators': blankToNull(_illustrators.text),
     };
     if (_source != null) payload['source'] = _source;
     return payload;
@@ -418,7 +414,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                     final picked = await showPickerSheet<String>(
                       context,
                       title: l10n.tr('Publisher'),
-                      selected: _blankToNull(_publisher.text),
+                      selected: blankToNull(_publisher.text),
                       options: [
                         for (final item in items) PickerOption(item.name, item.name),
                       ],

@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
 )
 
 from .. import i18n
-from ..book_fields import cover_type_label, read_status_label, score_label
 from .theme import rgba
 
 
@@ -155,6 +154,45 @@ def card() -> QFrame:
     frame = QFrame()
     frame.setObjectName("Card")
     return frame
+
+
+def clear_layout(layout) -> None:
+    """Remove and delete every widget in ``layout``."""
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            # Unparent immediately so the old widget stops painting this frame
+            # (deleteLater alone can leave ghosts until the event loop runs).
+            widget.setParent(None)
+            widget.deleteLater()
+
+
+def stat_card(
+    icon: str, label: str, color: str, *, initial: str = "0"
+) -> tuple[QFrame, QLabel]:
+    """A compact headline tile; returns the frame and its value label."""
+    frame = card()
+    value = QLabel(initial)
+    value.setObjectName("StatValue")
+    value.setStyleSheet(f"color: {color};")
+    caption = QLabel(label)
+    caption.setObjectName("StatLabel")
+    caption.setWordWrap(True)
+    icon_label = QLabel(icon)
+    icon_label.setObjectName("StatIcon")
+
+    text_col = QVBoxLayout()
+    text_col.setSpacing(0)
+    text_col.addWidget(value)
+    text_col.addWidget(caption)
+
+    row = QHBoxLayout(frame)
+    row.setContentsMargins(18, 16, 18, 16)
+    row.addLayout(text_col)
+    row.addStretch(1)
+    row.addWidget(icon_label)
+    return frame, value
 
 
 def spin_stepper(spin: QAbstractSpinBox, *, width: int = 84) -> QWidget:

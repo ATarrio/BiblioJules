@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import i18n
-from ..book_fields import READ_STATUSES
+from ..book_fields import READ_STATUSES, read_status_label, score_label
 from ..i18n import _
 from .repo import RemoteRepo, get_repo
 from .util import (
@@ -31,8 +31,6 @@ from .util import (
     fill_combo,
     location_choices,
     page_header,
-    read_status_label,
-    score_label,
     status_choices,
 )
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog

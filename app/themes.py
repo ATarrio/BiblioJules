@@ -161,9 +161,6 @@ THEMES: tuple[ColorTheme, ...]
 DEFAULT_THEME: str
 DEFAULT_THEME, THEMES = _load()
 
-#: The slugs, in the same order.
-THEME_SLUGS: tuple[str, ...] = tuple(theme.slug for theme in THEMES)
-
 
 def surface_scale() -> dict[str, str]:
     """Tailwind colour values for the surface ramp.

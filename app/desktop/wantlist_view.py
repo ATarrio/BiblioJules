@@ -224,10 +224,6 @@ class WantlistView(QWidget):
         if not entry_id:
             return
         entry = self._rows[row] if 0 <= row < len(self._rows) else {}
-        title = str(entry.get("title") or "")
-        authors = entry.get("authors")
-        if isinstance(authors, list):
-            authors = ", ".join(str(a) for a in authors)
         if isinstance(get_repo(), RemoteRepo):
             run_blocking(
                 lambda: _move_entry(entry, get_repo()),
@@ -241,6 +237,12 @@ class WantlistView(QWidget):
             self._action_failed(str(exc))
             return
         self.refresh()
+
+    def _action_failed(self, message: str) -> None:
+        self.add_btn.setEnabled(True)
+        if self._deleted:
+            return
+        self._show_error(_("Could not update the want-to-read list: %s") % message)
 
 
 def _move_entry(entry: dict, repo) -> None:
@@ -256,9 +258,3 @@ def _move_entry(entry: dict, repo) -> None:
     })
     repo.remove_want(str(entry.get("id", "")))
 
-
-def _action_failed(self, message: str) -> None:
-        self.add_btn.setEnabled(True)
-        if self._deleted:
-            return
-        self._show_error(_("Could not update the want-to-read list: %s") % message)

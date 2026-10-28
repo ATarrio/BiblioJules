@@ -8,13 +8,13 @@ are simply being read at home are better represented by a status (e.g.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .common import SyncIdMixin, UpdatedAtMixin
+from .common import SyncIdMixin, UpdatedAtMixin, utc_now
 
 
 class Loan(SyncIdMixin, UpdatedAtMixin, Base):
@@ -37,7 +37,7 @@ class Loan(SyncIdMixin, UpdatedAtMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=utc_now
     )
 
     @property

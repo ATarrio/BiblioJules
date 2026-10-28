@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".venv", "data", "migrations/versions", "mobile"]
+
+[tool.ruff.lint]
+# Deliberately conservative: catch broken code and unused names without
+# reformatting a codebase that has its own, consistent style.
+select = ["E9", "F"]

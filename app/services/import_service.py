@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
-from typing import Any
 
 from .isbn_lookup import http_client, lookup_isbn, normalize_isbn
 
@@ -119,7 +117,7 @@ def parse_import_csv(text: str, delimiter: str = ",") -> list[dict]:
     return rows
 
 
-async def _enrich_with(rows: list[dict], client, db=None) -> list[dict]:
+async def _enrich_with(rows: list[dict], client) -> list[dict]:
     """The per-row work, sharing one HTTP client for the whole batch."""
     enriched = []
     lookups = 0
@@ -152,8 +150,8 @@ async def _enrich_with(rows: list[dict], client, db=None) -> list[dict]:
     return enriched
 
 
-async def enrich_import_rows(rows: list[dict], db=None) -> list[dict]:
+async def enrich_import_rows(rows: list[dict]) -> list[dict]:
     """Look up missing metadata by ISBN for rows without a title or author."""
     # One pool for the whole batch: a 200-row import used to open 200 clients.
     async with http_client() as client:
-        return await _enrich_with(rows, client, db)
+        return await _enrich_with(rows, client)

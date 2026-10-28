@@ -45,6 +45,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from ..config import settings
+from ..database import SYNCED_TABLES
 
 # The colour rules live with the library (one status writer, one validator):
 # a snapshot arriving from a shared folder is re-checked through the very same
@@ -76,7 +77,7 @@ REQUIRED_TABLES = (
 )
 
 #: Tables whose rows carry a ``sync_id``/``updated_at`` pair.
-SYNCED_TABLES = ("books", "authors", "publishers", "locations", "statuses", "loans")
+#: The list lives in :mod:`app.database` so schema setup and the merge agree.
 
 STATUS_FIELDS = (
     "name",
@@ -89,7 +90,6 @@ STATUS_FIELDS = (
     "is_default",
 )
 LOCATION_FIELDS = ("name", "kind", "description")
-NAME_FIELDS = ("name",)
 BOOK_FIELDS = (
     "isbn",
     "title",
@@ -116,15 +116,6 @@ LOAN_FIELDS = (
     "returned_at",
     "notes",
 )
-
-TABLE_LABELS = {
-    "books": "books",
-    "authors": "authors",
-    "publishers": "publishers",
-    "locations": "shelves",
-    "statuses": "statuses",
-    "loans": "loans",
-}
 
 
 class SyncError(RuntimeError):

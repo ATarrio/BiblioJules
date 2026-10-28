@@ -23,7 +23,7 @@ import 'prefs.dart';
 import 'secure_store.dart';
 
 const String kAppName = 'BiblioJules';
-const String kAppVersion = '0.1.0';
+const String kAppVersion = '0.4.1';
 
 /// Automatic retries would make an unreachable server flip between "error" and
 /// "loading" forever; screens offer an explicit Retry instead.

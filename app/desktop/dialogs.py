@@ -30,21 +30,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..book_fields import COVER_TYPES, READ_STATUSES
+from ..book_fields import COVER_TYPES, READ_STATUSES, cover_type_label, read_status_label, score_label
 from ..i18n import _
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from .cover import CoverImage
 from .repo import RepoError, get_repo
 from .switch import Switch
 from .util import (
-    cover_type_label,
     default_status_id,
     display_status,
     fill_combo,
     format_date,
     location_choices,
-    read_status_label,
-    score_label,
     spin_stepper,
     status_choices,
     style_badge,

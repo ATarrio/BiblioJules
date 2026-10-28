@@ -16,101 +16,18 @@ directly (local mode, through this module).
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-import threading
-from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-try:  # POSIX file locks; Windows falls back to the in-process lock.
-    import fcntl
-except ImportError:  # pragma: no cover - Windows
-    fcntl = None  # type: ignore[assignment]
+from sqlalchemy import func, select
 
 from ..config import DATA_DIR
+from ..models import Book, ReadingGoal, Status
+from .jsonstore import file_lock, load_json, save_json
 
-STATS_FILE = DATA_DIR / "stats.json"
 GOALS_FILE = DATA_DIR / "goals.json"
 WANT_LIST_FILE = DATA_DIR / "want_list.json"
-
-_LOCKS_GUARD = threading.Lock()
-_LOCKS: dict[str, threading.RLock] = {}
-
-
-def _thread_lock(path: Path) -> threading.RLock:
-    key = str(path)
-    with _LOCKS_GUARD:
-        lock = _LOCKS.get(key)
-        if lock is None:
-            lock = _LOCKS[key] = threading.RLock()
-        return lock
-
-
-@contextmanager
-def _file_lock(path: Path):
-    """Serialize a read-modify-write of one JSON file.
-
-    The thread lock covers several workers in one process; ``flock`` covers
-    separate processes (the web server and the desktop app share ``data/``).
-    """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    lock = _thread_lock(path)
-    with lock:
-        handle = None
-        try:
-            handle = open(str(path) + ".lock", "a+", encoding="utf-8")
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            if handle is not None:
-                if fcntl is not None:
-                    try:
-                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-                    except OSError:  # pragma: no cover
-                        pass
-                handle.close()
-
-
-# --------------------------------------------------------------------------- #
-# JSON helpers
-# --------------------------------------------------------------------------- #
-def _load_json(path: Path, default: Any) -> Any:
-    try:
-        with path.open(encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return default
-
-
-def _save_json(path: Path, data: Any) -> None:
-    """Write atomically, using a unique temporary file per writer.
-
-    A fixed ``.tmp`` name let two requests overwrite each other's partial file
-    and publish a truncated JSON document.
-    """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    descriptor, tmp_name = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
-    )
-    tmp = Path(tmp_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        try:
-            tmp.chmod(0o600)
-        except OSError:  # pragma: no cover - non-POSIX filesystems
-            pass
-        os.replace(tmp, path)
-    finally:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -137,7 +54,7 @@ def _read_scoped(
     # ``locked=True`` — flock is not re-entrant across two open handles.
     if locked:
         return _read_scoped_unlocked(path, target, default, user_id)
-    with _file_lock(target):
+    with file_lock(target):
         return _read_scoped_unlocked(path, target, default, user_id)
 
 
@@ -147,14 +64,14 @@ def _read_scoped_unlocked(
     if user_id is not None and not target.exists() and path.exists():
         # One-time migration: the old shared file becomes this account's file.
         # Re-checked under the lock, so only the first reader copies.
-        data = _load_json(path, default)
-        _save_json(target, data)
+        data = load_json(path, default)
+        save_json(target, data)
         return data
-    return _load_json(target, default)
+    return load_json(target, default)
 
 
 def _write_scoped(path: Path, data: Any, user_id: int | None) -> None:
-    _save_json(_scoped_path(path, user_id), data)
+    save_json(_scoped_path(path, user_id), data)
 
 
 # --------------------------------------------------------------------------- #
@@ -169,24 +86,43 @@ def compute_stats(db) -> dict:
     always reflect the current library state.  They are *not* persisted here —
     only goals and the want-to-read list are saved to disk.
     """
-    from ..services.library import get_stats, query_books
+    from .library import get_stats
 
     shared = get_stats(db)
 
-    # Fetch every book once and tally by read status, so "currently reading",
-    # DNF, lost and donated are not silently counted from the read-only subset.
-    books = query_books(db)
-    by_status: dict[str, int] = {}
-    for book in books:
-        slug = book.read_status or "unread"
-        by_status[slug] = by_status.get(slug, 0) + 1
+    # Read status and shelf status are different axes: "lost"/"donated" are
+    # shelves, not read-status slugs, so they must be counted from status_id.
+    by_status = {
+        (slug or "unread"): count
+        for slug, count in db.execute(
+            select(Book.read_status, func.count(Book.id)).group_by(Book.read_status)
+        ).all()
+    }
+    by_shelf = {
+        slug: count
+        for slug, count in db.execute(
+            select(Status.slug, func.count(Book.id))
+            .join(Book, Book.status_id == Status.id)
+            .where(Status.slug.in_(("lost", "donated")))
+            .group_by(Status.slug)
+        ).all()
+    }
 
-    read_books = [b for b in books if b.read_status == "read"]
-    books_read = len(read_books)
-    pages_read = sum(b.page_count or 0 for b in read_books if b.page_count)
-
-    rated = [b for b in read_books if b.score is not None]
-    avg_rating = round(sum(b.score for b in rated) / len(rated), 1) if rated else None
+    books_read = by_status.get("read", 0)
+    pages_read = (
+        db.scalar(
+            select(func.coalesce(func.sum(Book.page_count), 0)).where(
+                Book.read_status == "read"
+            )
+        )
+        or 0
+    )
+    average = db.scalar(
+        select(func.avg(Book.score)).where(
+            Book.read_status == "read", Book.score.is_not(None)
+        )
+    )
+    avg_rating = round(float(average), 1) if average is not None else None
 
     return {
         "total_books": shared["total"],
@@ -199,25 +135,15 @@ def compute_stats(db) -> dict:
         "wishlist": shared["wishlist"],
         "authors": shared["authors"],
         "status_breakdown": {
-            "read": by_status.get("read", 0),
+            "read": books_read,
             "currently_reading": by_status.get("currently_reading", 0),
             "dnf": by_status.get("dnf", 0),
-            "lost": by_status.get("lost", 0),
-            "donated": by_status.get("donated", 0),
+            "lost": by_shelf.get("lost", 0),
+            "donated": by_shelf.get("donated", 0),
             "unread": by_status.get("unread", 0),
             "to_read": by_status.get("to_read", 0),
         },
     }
-
-
-def load_stats_file() -> dict:
-    """Return the persisted per-device stats dict (currently empty by default)."""
-    return _load_json(STATS_FILE, {})
-
-
-def save_stats_file(stats: dict) -> None:
-    """Persist per-device local stats (e.g. a last-updated timestamp)."""
-    _save_json(STATS_FILE, stats)
 
 
 # --------------------------------------------------------------------------- #
@@ -230,10 +156,6 @@ def save_stats_file(stats: dict) -> None:
 # Progress is tracked per objective (``books_done`` / ``pages_done``), bumped
 # whenever a book is marked read in that objective's year — never the all-time
 # count of read books, which stays on the dashboard.
-
-from sqlalchemy import select
-
-from ..models import ReadingGoal
 
 
 def _scope(user_id: int | None):
@@ -329,8 +251,6 @@ def record_read(db, user_id: int | None = None, pages: int = 0) -> None:
     and also any "any year" objective (``year IS NULL``). Progress is per
     objective, so this never touches the all-time dashboard count.
     """
-    from datetime import date
-
     year = date.today().year
     rows = db.scalars(
         select(ReadingGoal).where(
@@ -351,7 +271,7 @@ def _migrate_legacy_goals(db, user_id: int | None) -> None:
     if db.scalars(select(ReadingGoal).where(_scope(user_id))).first() is not None:
         # Already migrated (or the user set goals directly): leave the file alone.
         return
-    data = _load_json(path, [])
+    data = load_json(path, [])
     if isinstance(data, dict):
         data = [data]
     if not isinstance(data, list):
@@ -394,18 +314,11 @@ def load_want_list(user_id: int | None = None) -> list[dict]:
     return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
 
-def save_want_list(items: list[dict], user_id: int | None = None) -> None:
-    """Replace the want-to-read list for ``user_id`` (or the offline device)."""
-    clean = [item for item in items if isinstance(item, dict)]
-    with _file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
-        _write_scoped(WANT_LIST_FILE, clean, user_id)
-
-
 def add_want_entry(entry: dict, user_id: int | None = None) -> None:
     """Append an entry, deduplicating by ISBN (or title) when present."""
     if not isinstance(entry, dict):
         return
-    with _file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
+    with file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
         data = _read_scoped(WANT_LIST_FILE, [], user_id, locked=True)
         items = [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
         isbn = (entry.get("isbn") or "").strip()
@@ -426,7 +339,7 @@ def remove_want_entry(
     user_id: int | None = None,
 ) -> None:
     """Remove an entry by its id (or by ISBN as a fallback)."""
-    with _file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
+    with file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
         data = _read_scoped(WANT_LIST_FILE, [], user_id, locked=True)
         items = [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
         if entry_id:

@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,11 @@ from ..services.isbn_lookup import normalize_isbn
 from ..services.library import create_book, find_by_isbn
 from ..services.stats import add_want_entry, load_want_list
 from ..templating import templates
+from .common import (
+    form_dict as _form_dict,
+    fragment_error as _error,
+    user_id as _user_id,
+)
 
 router = APIRouter(prefix="/import", tags=["import"])
 logger = logging.getLogger(__name__)
@@ -25,11 +30,6 @@ logger = logging.getLogger(__name__)
 #: and keeps one request from filling the disk or exhausting memory.
 MAX_CSV_BYTES = 20 * 1024 * 1024
 MAX_IMPORT_ROWS = 5000
-
-
-def _user_id(request: Request) -> int | None:
-    user = getattr(request.state, "user", None)
-    return getattr(user, "id", None)
 
 
 def _too_large(request: Request) -> HTMLResponse | None:
@@ -45,19 +45,6 @@ def _too_large(request: Request) -> HTMLResponse | None:
             status_code=413,
         )
     return None
-
-
-def _error(request: Request, message: str, status_code: int = 400):
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(
-            request, "_fragment_error.html", {"message": message}, status_code=status_code
-        )
-    raise HTTPException(status_code=status_code, detail=message)
-
-
-async def _form_dict(request: Request) -> dict:
-    form = await request.form()
-    return {key: value for key, value in form.items()}
 
 
 @router.get("", response_class=HTMLResponse)
@@ -94,7 +81,7 @@ async def import_csv(request: Request, db: Session = Depends(get_db)):
         )
 
     # Enrich rows with online metadata where possible.
-    rows = await import_service.enrich_import_rows(rows, db=db)
+    rows = await import_service.enrich_import_rows(rows)
 
     # If only_to_read is checked, filter to rows with read_status == "to_read"
     if only_to_read:

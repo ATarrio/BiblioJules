@@ -37,13 +37,6 @@
     return meta && meta.content ? { 'X-CSRF-Token': meta.content } : {};
   }
 
-  /** Plural-aware helper built on BIBLIO_I18N.plural(singular, n). */
-  function np(singular, n) {
-    const fn = i18n.plural;
-    if (typeof fn === 'function') return fn(singular, n);
-    return n === 1 ? singular : singular + 's';
-  }
-
   // ----------------------------------------------------------------------- #
   // Stats formatting (used by the dashboard widget and the reading page)
   // ----------------------------------------------------------------------- #
@@ -86,21 +79,13 @@
     } catch (e) { return null; }
   }
 
-  async function saveGoals(goals) {
-    try {
-      const res = await fetch('/api/goals', {
-        method: 'POST',
-        headers: writeHeaders(),
-        body: JSON.stringify(goals),
-      });
-      return res.ok;
-    } catch (e) { return false; }
-  }
-
   async function removeGoal(year) {
     try {
       const y = (year == null || year === '') ? 0 : Number(year);
-      const res = await fetch(`/api/goals/${y}`, { method: 'DELETE' });
+      const res = await fetch(`/api/goals/${y}`, {
+        method: 'DELETE',
+        headers: writeHeadersNoBody(),
+      });
       return res.ok;
     } catch (e) { return false; }
   }
@@ -200,9 +185,9 @@
       });
       if (res.ok) return true;
       const data = await res.json().catch(() => ({}));
-      alert(data.detail || 'Failed to move entry to catalog');
+      alert(data.detail || t('Failed to move entry to catalog'));
     } catch (e) {
-      alert('Failed to move entry to catalog');
+      alert(t('Failed to move entry to catalog'));
     }
     return false;
   }

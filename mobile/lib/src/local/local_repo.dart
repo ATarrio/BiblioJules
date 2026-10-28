@@ -1258,8 +1258,8 @@ class LocalRepo implements LibraryRepo {
     final id = await db.insert('locations', <String, Object?>{
       'name': name.trim(),
       'parent_id': _toId(parentId),
-      'kind': _blankToNull(kind),
-      'description': _blankToNull(description),
+      'kind': blankToNull(kind),
+      'description': blankToNull(description),
       'created_at': now,
       'sync_id': newSyncId(),
       'updated_at': now,
@@ -1295,8 +1295,8 @@ class LocalRepo implements LibraryRepo {
         'name': name.trim().isEmpty ? existing['name'] : name.trim(),
         'parent_id': newParent,
         // The server leaves these alone when the caller sends nothing.
-        if (kind != null) 'kind': _blankToNull(kind),
-        if (description != null) 'description': _blankToNull(description),
+        if (kind != null) 'kind': blankToNull(kind),
+        if (description != null) 'description': blankToNull(description),
         'updated_at': nowStamp(),
       },
       where: 'id = ?',
@@ -1449,8 +1449,8 @@ class LocalRepo implements LibraryRepo {
       'name': trimmed,
       'slug': await _uniqueStatusSlug(db, slugify(trimmed)),
       'color': color.isEmpty ? '#64748b' : color,
-      'icon': _blankToNull(icon),
-      'description': _blankToNull(description),
+      'icon': blankToNull(icon),
+      'description': blankToNull(description),
       'sort_order': maxOrder + 10,
       'is_system': 0,
       'is_default': 0,
@@ -1494,8 +1494,8 @@ class LocalRepo implements LibraryRepo {
       }
     }
     if (color.trim().isNotEmpty) values['color'] = color.trim();
-    values['icon'] = _blankToNull(icon);
-    values['description'] = _blankToNull(description);
+    values['icon'] = blankToNull(icon);
+    values['description'] = blankToNull(description);
     values['updated_at'] = nowStamp();
 
     await db.update(
@@ -1747,6 +1747,16 @@ class LocalRepo implements LibraryRepo {
         if (score != null) ratings.add(score);
       }
     }
+    // "Lost" and "donated" are shelves, not read-status slugs.
+    final shelfRows = await db.rawQuery(
+      'SELECT statuses.slug AS slug, COUNT(books.id) AS count FROM books '
+      'JOIN statuses ON statuses.id = books.status_id '
+      "WHERE statuses.slug IN ('lost', 'donated') GROUP BY statuses.slug",
+    );
+    final byShelf = <String, int>{
+      for (final row in shelfRows)
+        '${row['slug']}': _toInt(row['count']) ?? 0,
+    };
     final total = _toInt(shared['total']) ?? 0;
     final wishlist = _toInt(shared['wishlist']) ?? 0;
     final avg = ratings.isEmpty
@@ -1766,16 +1776,13 @@ class LocalRepo implements LibraryRepo {
       'wishlist': wishlist,
       'authors': shared['authors'],
       'status_breakdown': <String, int>{
-        for (final key in const <String>[
-          'read',
-          'currently_reading',
-          'dnf',
-          'lost',
-          'donated',
-          'unread',
-          'to_read',
-        ])
-          key: byStatus[key] ?? 0,
+        'read': byStatus['read'] ?? 0,
+        'currently_reading': byStatus['currently_reading'] ?? 0,
+        'dnf': byStatus['dnf'] ?? 0,
+        'lost': byShelf['lost'] ?? 0,
+        'donated': byShelf['donated'] ?? 0,
+        'unread': byStatus['unread'] ?? 0,
+        'to_read': byStatus['to_read'] ?? 0,
       },
     });
   }
@@ -2125,10 +2132,5 @@ class LocalRepo implements LibraryRepo {
           .toList();
     }
     return const <String>[];
-  }
-
-  String? _blankToNull(String? value) {
-    final trimmed = (value ?? '').trim();
-    return trimmed.isEmpty ? null : trimmed;
   }
 }

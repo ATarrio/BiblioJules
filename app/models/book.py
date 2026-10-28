@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .common import SyncIdMixin
+from .common import SyncIdMixin, UpdatedAtMixin, utc_now
 
 
-class Book(SyncIdMixin, Base):
+class Book(SyncIdMixin, UpdatedAtMixin, Base):
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -71,12 +71,7 @@ class Book(SyncIdMixin, Base):
     illustrators: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True), default=utc_now
     )
 
     authors: Mapped[list["Author"]] = relationship(  # noqa: F821

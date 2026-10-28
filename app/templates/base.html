@@ -204,27 +204,7 @@
     loading: {{ _('Loading…')|tojson }},
     error: {{ _('Something went wrong (%s).')|tojson }},
     language: {{ current_language|tojson }},
-    strings: {
-      "Reading stats": {{ _('Reading stats')|tojson }},
-      "Reading goals": {{ _('Reading goals')|tojson }},
-      "Want-to-read list": {{ _('Want-to-read list')|tojson }},
-      "Save goals": {{ _('Save goals')|tojson }},
-      "No books on your want-to-read list yet.": {{ _('No books on your want-to-read list yet.')|tojson }},
-      "Remove from want-to-read": {{ _('Remove from want-to-read')|tojson }},
-      "Books read": {{ _('Books read')|tojson }},
-      "Pages read": {{ _('Pages read')|tojson }},
-      "Average rating": {{ _('Average rating')|tojson }},
-      "Currently reading": {{ _('Currently reading')|tojson }},
-      "DNF": {{ _('DNF')|tojson }},
-      "Lost / donated": {{ _('Lost / donated')|tojson }},
-      "Your reading stats": {{ _('Your reading stats')|tojson }},
-      "Set your goals above to see progress.": {{ _('Set your goals above to see progress.')|tojson }},
-      "Reading goal": {{ _('Reading goal')|tojson }},
-      "books": {{ _('books')|tojson }},
-      "Reading goal progress": {{ _('Reading goal progress')|tojson }},
-      "Loading…": {{ _('Loading…')|tojson }},
-      "No books yet.": {{ _('No books yet.')|tojson }}
-    },
+    strings: {{ catalog|tojson }},
   };
   window.biblioSetLanguage = function (code) {
     const next = encodeURIComponent(location.pathname + location.search);

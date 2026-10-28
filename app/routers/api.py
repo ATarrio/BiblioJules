@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import i18n
+from .. import __version__, i18n
 from ..i18n import _
 from ..book_fields import (
     COVER_TYPES,
@@ -35,10 +35,9 @@ from ..schemas import BookIn, LoanIn, LocationIn, ReturnIn, StatusIn
 from ..services import library
 from ..services.covers import (
     MAX_COVER_BYTES,
-    covers_dir,
     delete_cover,
-    new_cover_name,
     sniff_image,
+    store_cover,
 )
 from ..services.isbn_lookup import lookup_isbn, search_books
 from ..services.serializers import (
@@ -47,6 +46,16 @@ from ..services.serializers import (
     location_to_dict,
     status_to_dict,
 )
+from ..services.stats import (
+    add_want_entry,
+    compute_stats,
+    load_goals,
+    load_want_list,
+    remove_goals,
+    remove_want_entry,
+    save_goals,
+)
+from .common import user_id as _user_id
 from .pages import SORT_FIELDS
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -63,11 +72,6 @@ def _descending(direction: str | None) -> bool | None:
     if direction is None:
         return None
     return direction.strip().lower() == "desc"
-
-
-def _user_id(request: Request) -> int | None:
-    user = getattr(request.state, "user", None)
-    return getattr(user, "id", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -158,20 +162,17 @@ async def upload_cover(
             status_code=400, detail=_("That file is not a supported image.")
         )
 
-    safe_name = new_cover_name(book, suffix)
-    old_url = book.cover_url
     try:
-        (covers_dir() / safe_name).write_bytes(content)
+        new_url, old_url = store_cover(book, content, suffix)
     except OSError as exc:
         raise HTTPException(
             status_code=500, detail=_("The cover could not be saved.")
         ) from exc
-    book.cover_url = f"/covers/{safe_name}"
     try:
         db.commit()
     except Exception as exc:  # noqa: BLE001 - roll back the row and remove the file
         db.rollback()
-        (covers_dir() / safe_name).unlink(missing_ok=True)
+        delete_cover(new_url)
         raise HTTPException(
             status_code=500, detail=_("The cover could not be saved.")
         ) from exc
@@ -407,13 +408,8 @@ def list_sagas(db: Session = Depends(get_db)):
 # --------------------------------------------------------------------------- #
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db)):
-    recent = library.query_books(db, sort="recent")[:6]
-    loans = [
-        loan
-        for book in library.query_books(db, loaned="loaned")
-        for loan in [book.active_loan]
-        if loan
-    ]
+    recent = library.query_books(db, sort="recent", limit=8)
+    loans = library.list_active_loans(db)
     return {
         "stats": library.get_stats(db),
         "status_counts": [
@@ -442,7 +438,7 @@ def meta():
     """Fixed vocabularies and options, so clients need not hardcode them."""
     return {
         "app_name": settings.app_name,
-        "version": "0.1.0",
+        "version": __version__,
         "cover_types": [
             {"slug": slug, "label": cover_type_label(slug)} for slug, _ in COVER_TYPES
         ],
@@ -503,24 +499,18 @@ def stats(db: Session = Depends(get_db)):
 @router.get("/personal-stats")
 def personal_stats(db: Session = Depends(get_db)):
     """Reading stats computed from the shared library DB."""
-    from ..services.stats import compute_stats
-
     return compute_stats(db)
 
 
 @router.get("/goals")
 def reading_goals(request: Request, db: Session = Depends(get_db)):
     """Read the signed-in account's reading objectives (one per year)."""
-    from ..services.stats import load_goals
-
     return load_goals(db, user_id=_user_id(request))
 
 
 @router.post("/goals")
 def save_reading_goals(payload: dict, request: Request, db: Session = Depends(get_db)):
     """Save one reading objective (target books / pages for a given year)."""
-    from ..services.stats import save_goals
-
     save_goals(db, payload, user_id=_user_id(request))
     return {"ok": True}
 
@@ -528,8 +518,6 @@ def save_reading_goals(payload: dict, request: Request, db: Session = Depends(ge
 @router.delete("/goals/{year}")
 def delete_reading_goal(year: int, request: Request, db: Session = Depends(get_db)):
     """Remove the objective for a year (``0`` clears the "any year" objective)."""
-    from ..services.stats import remove_goals
-
     remove_goals(db, year=None if year == 0 else year, user_id=_user_id(request))
     return {"ok": True}
 
@@ -540,16 +528,12 @@ def delete_reading_goal(year: int, request: Request, db: Session = Depends(get_d
 @router.get("/wantlist")
 def wantlist(request: Request):
     """Read the signed-in account's want-to-read list."""
-    from ..services.stats import load_want_list
-
     return load_want_list(user_id=_user_id(request))
 
 
 @router.post("/wantlist")
 def add_wantlist_entry(payload: dict, request: Request):
     """Append an entry to the want-to-read list."""
-    from ..services.stats import add_want_entry
-
     add_want_entry(payload, user_id=_user_id(request))
     return {"ok": True}
 
@@ -557,17 +541,14 @@ def add_wantlist_entry(payload: dict, request: Request):
 @router.delete("/wantlist/{entry_id}")
 def delete_wantlist_entry(entry_id: str, request: Request):
     """Remove an entry from the want-to-read list."""
-    from ..services.stats import remove_want_entry
-
     remove_want_entry(entry_id=entry_id, user_id=_user_id(request))
 
 
 @router.post("/wantlist/{entry_id}/move")
-def move_wantlist_to_catalog(entry_id: str, request: Request):
+def move_wantlist_to_catalog(
+    entry_id: str, request: Request, db: Session = Depends(get_db)
+):
     """Move a want-to-read entry to the catalog with 'to_read' status."""
-    from ..services.stats import load_want_list, remove_want_entry
-    from ..services import library as library_service
-
     items = load_want_list(user_id=_user_id(request))
     entry = next((e for e in items if str(e.get("id", "")) == str(entry_id)), None)
     if entry is None:
@@ -580,9 +561,8 @@ def move_wantlist_to_catalog(entry_id: str, request: Request):
             detail="Cannot move to catalog: the entry has no ISBN.",
         )
 
-    db = next(get_db())
     try:
-        book = library_service.create_book(db, {
+        book = library.create_book(db, {
             "isbn": isbn,
             "title": entry.get("title", ""),
             "authors": entry.get("authors", ""),

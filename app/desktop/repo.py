@@ -160,6 +160,10 @@ class Repo(ABC):
         """``[{"status": {...}, "count": n}, ...]`` for every status."""
 
     @abstractmethod
+    def dashboard(self) -> dict:
+        """Stats, status counts, recent books and active loans in one call."""
+
+    @abstractmethod
     def personal_stats(self) -> dict:
         """Reading stats derived from the library (shared data, local view)."""
 
@@ -278,6 +282,29 @@ class LocalRepo(Repo):
             if book is None:
                 raise NotFound(_("This book no longer exists."))
             library.return_loan(db, book)
+
+    # -- dashboard --------------------------------------------------------- #
+    def dashboard(self) -> dict:
+        with session_scope() as db:
+            recent = library.query_books(db, sort="recent", limit=8)
+            return {
+                "stats": library.get_stats(db),
+                "status_counts": [
+                    {"status": status_to_dict(status), "count": count}
+                    for status, count in library.status_counts(db)
+                ],
+                "recent": [book_to_dict(book) for book in recent],
+                "active_loans": [
+                    {
+                        **loan_to_dict(loan),
+                        "book": {
+                            "id": loan.book_id,
+                            "title": loan.book.title if loan.book else None,
+                        },
+                    }
+                    for loan in library.list_active_loans(db)
+                ],
+            }
 
     # -- statuses ---------------------------------------------------------- #
     def list_statuses(self) -> list[dict]:
@@ -606,6 +633,9 @@ class RemoteRepo(Repo):
     def status_counts(self) -> list[dict]:
         data = self._request("GET", "/api/dashboard") or {}
         return data.get("status_counts", [])
+
+    def dashboard(self) -> dict:
+        return self._request("GET", "/api/dashboard") or {}
 
     def personal_stats(self) -> dict:
         return self._request("GET", "/api/personal-stats") or {}

@@ -5,22 +5,27 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..forms import book_to_form, form_context
 from ..i18n import _
 from ..services import library
 from ..services.covers import (
     MAX_COVER_BYTES,
-    covers_dir,
     delete_cover,
-    new_cover_name,
     sniff_image,
+    store_cover,
 )
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
 from ..templating import templates
+from .common import (
+    form_dict as _form_dict,
+    fragment_error as _fragment_error,
+    redirect as _redirect,
+)
 
 router = APIRouter()
 
@@ -37,87 +42,6 @@ def _parse_date(value) -> date | None:
         return datetime.strptime(str(value), "%Y-%m-%d").date()
     except ValueError:
         return None
-
-
-def _redirect(request: Request, url: str) -> Response:
-    """Redirect, transparently supporting HTMX requests."""
-    if request.headers.get("HX-Request"):
-        return Response(status_code=204, headers={"HX-Redirect": url})
-    return Response(status_code=303, headers={"Location": url})
-
-
-async def _form_dict(request: Request) -> dict:
-    form = await request.form()
-    return {key: value for key, value in form.items()}
-
-
-def _fragment_error(request: Request, message: str, status_code: int = 400):
-    """A small HTML error for HTMX, a normal HTTP error otherwise."""
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(
-            request, "_fragment_error.html", {"message": message}, status_code=status_code
-        )
-    raise HTTPException(status_code=status_code, detail=message)
-
-
-def _sniff_image(content: bytes) -> str | None:
-    """Return a safe extension based on the file's own bytes, not its name."""
-    return sniff_image(content)
-
-
-def _covers_dir():
-    return covers_dir()
-
-
-def _delete_cover(cover_url: str | None) -> None:
-    delete_cover(cover_url)
-
-
-def book_to_form(book) -> dict:
-    """Shape a Book (model object or plain dict) into template form fields."""
-    if isinstance(book, dict):
-        data = dict(book)
-        authors = data.get("authors") or []
-        if isinstance(authors, list):
-            data["authors"] = ", ".join(authors)
-        return data
-    return {
-        "id": book.id,
-        "isbn": book.isbn,
-        "title": book.title,
-        "subtitle": book.subtitle,
-        "authors": ", ".join(book.author_names),
-        "publisher": book.publisher.name if book.publisher else "",
-        "published_date": book.published_date
-        or (str(book.published_year) if book.published_year else ""),
-        "page_count": book.page_count,
-        "language": book.language,
-        "cover_url": book.cover_url,
-        "cover_type": book.cover_type,
-        "read_status": book.read_status,
-        "score": book.score,
-        "saga": book.saga,
-        "saga_number": book.saga_number,
-        "description": book.description,
-        "notes": book.notes,
-        "collaborators": book.collaborators,
-        "translators": book.translators,
-        "illustrators": book.illustrators,
-        "source": book.source,
-        "location_id": book.location_id,
-        "status_id": book.status_id,
-    }
-
-
-def form_context(db: Session, form: dict, **extra) -> dict:
-    return {
-        "form": form,
-        "statuses": library.list_statuses(db),
-        "locations": library.flatten_locations(db),
-        "default_status": library.get_default_status(db),
-        "sagas": library.list_sagas(db),
-        **extra,
-    }
 
 
 def _book_form_error(
@@ -452,7 +376,7 @@ def delete_book(book_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=_("Book not found"))
     cover_url = book.cover_url
     library.delete_book(db, book)
-    _delete_cover(cover_url)
+    delete_cover(cover_url)
     return _redirect(request, "/books")
 
 
@@ -526,26 +450,23 @@ async def upload_cover(book_id: int, request: Request, db: Session = Depends(get
     if len(content) > MAX_COVER_BYTES:
         return _fragment_error(request, _("That image is too large (the limit is 10 MB)."), 413)
 
-    suffix = _sniff_image(content)
+    suffix = sniff_image(content)
     if suffix is None:
         return _fragment_error(request, _("That file is not a supported image."))
 
     # Random names stop one user from enumerating (or guessing) another's
     # covers. The sync id keeps two devices from overwriting each other's file.
-    safe_name = new_cover_name(book, suffix)
-    old_url = book.cover_url
     try:
-        (_covers_dir() / safe_name).write_bytes(content)
+        new_url, old_url = store_cover(book, content, suffix)
     except OSError:
         return _fragment_error(request, _("The cover could not be saved."), 500)
-    book.cover_url = f"/covers/{safe_name}"
     try:
         db.commit()
     except Exception:
         db.rollback()
-        (_covers_dir() / safe_name).unlink(missing_ok=True)
+        delete_cover(new_url)
         return _fragment_error(request, _("The cover could not be saved."))
-    _delete_cover(old_url)
+    delete_cover(old_url)
     return _redirect(request, f"/books/{book.id}")
 
 

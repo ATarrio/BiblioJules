@@ -95,10 +95,6 @@ def normalize_language(code: str | None) -> str:
     return DEFAULT_LANGUAGE
 
 
-def is_supported(code: str | None) -> bool:
-    return normalize_language(code) in SUPPORTED_LANGUAGES
-
-
 def load_catalog(language: str) -> dict[str, Any]:
     language = normalize_language(language)
     if language in _CATALOG_CACHE:

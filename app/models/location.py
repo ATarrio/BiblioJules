@@ -12,13 +12,13 @@ the tree also matches everything stored underneath it.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .common import SyncIdMixin, UpdatedAtMixin
+from .common import SyncIdMixin, UpdatedAtMixin, utc_now
 
 
 class Location(SyncIdMixin, UpdatedAtMixin, Base):
@@ -45,7 +45,7 @@ class Location(SyncIdMixin, UpdatedAtMixin, Base):
     books: Mapped[list["Book"]] = relationship(back_populates="location")  # noqa: F821
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=utc_now
     )
 
     # --- convenience --------------------------------------------------------

@@ -7,13 +7,13 @@ them to your needs. A few system statuses are seeded on first run.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .common import SyncIdMixin, UpdatedAtMixin
+from .common import SyncIdMixin, UpdatedAtMixin, utc_now
 
 
 class Status(SyncIdMixin, UpdatedAtMixin, Base):
@@ -33,7 +33,7 @@ class Status(SyncIdMixin, UpdatedAtMixin, Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=utc_now
     )
 
     books: Mapped[list["Book"]] = relationship(back_populates="status")  # noqa: F821

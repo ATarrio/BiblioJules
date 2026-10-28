@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..i18n import _
 from ..models import Token, User
-from ..models.token import KIND_API, KIND_WEB  # noqa: F401  (re-exported)
+from ..models.token import KIND_WEB
 from ..models.user import ROLE_ADMIN, ROLE_MEMBER, ROLES  # noqa: F401
 
 # --------------------------------------------------------------------------- #

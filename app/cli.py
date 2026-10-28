@@ -20,20 +20,13 @@ import argparse
 import getpass
 import sys
 
-from . import models  # noqa: F401  (registers every model on Base.metadata)
-from .database import Base, SessionLocal, engine, ensure_sync_schema
+from .bootstrap import prepare_database
+from .database import SessionLocal
 from .services import auth
-from .services.seed import seed_defaults
 
 
 def _prepare_database() -> None:
-    Base.metadata.create_all(bind=engine)
-    ensure_sync_schema()
-    db = SessionLocal()
-    try:
-        seed_defaults(db)
-    finally:
-        db.close()
+    prepare_database()
 
 
 def _interactive() -> bool:

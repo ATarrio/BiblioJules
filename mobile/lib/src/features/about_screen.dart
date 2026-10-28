@@ -55,7 +55,7 @@ class AboutScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                l10n.tr('The Android edition of BiblioJules. It keeps no catalogue of its own: it always reads and writes through the server below, so what you see here is the same collection as the web and desktop editions.'),
+                l10n.tr('The Android edition of BiblioJules. It works with a library on this phone or as a thin client for a server, so your collection stays available wherever you keep it.'),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -63,29 +63,41 @@ class AboutScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           Card(
             child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.dns_outlined),
-                  title: Text(l10n.tr('Backend URL')),
-                  subtitle: Text(session.baseUrl.isEmpty ? '—' : session.baseUrl),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.person_outline),
-                  title: Text(l10n.tr('Signed in as')),
-                  subtitle: Text(
-                    user == null
-                        ? '—'
-                        : '${user.shown} (${user.isAdmin ? l10n.tr('Administrator') : l10n.tr('Member')})',
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.storage_outlined),
-                  title: Text(l10n.tr('Local database')),
-                  subtitle: Text(l10n.tr('None — your books live on the server.')),
-                ),
-              ],
+              children: session.isLocal
+                  ? [
+                      ListTile(
+                        leading: const Icon(Icons.storage_outlined),
+                        title: Text(l10n.tr('Local database')),
+                        subtitle: Text(session.localLibraryName ?? '—'),
+                      ),
+                    ]
+                  : [
+                      ListTile(
+                        leading: const Icon(Icons.dns_outlined),
+                        title: Text(l10n.tr('Backend URL')),
+                        subtitle: Text(
+                          session.baseUrl.isEmpty ? '—' : session.baseUrl,
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.person_outline),
+                        title: Text(l10n.tr('Signed in as')),
+                        subtitle: Text(
+                          user == null
+                              ? '—'
+                              : '${user.shown} (${user.isAdmin ? l10n.tr('Administrator') : l10n.tr('Member')})',
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.storage_outlined),
+                        title: Text(l10n.tr('Local database')),
+                        subtitle: Text(
+                          l10n.tr('None — your books live on the server.'),
+                        ),
+                      ),
+                    ],
             ),
           ),
         ],

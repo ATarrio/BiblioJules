@@ -3,31 +3,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from urllib.parse import urlencode
 
 from ..database import get_db
 from ..i18n import _
 from ..models import Location
 from ..services import library
+from .common import (
+    form_dict as _form_dict,
+    redirect as _redirect,
+    redirect_error as _redirect_error,
+)
 
 router = APIRouter()
-
-
-def _redirect(request: Request, url: str) -> Response:
-    if request.headers.get("HX-Request"):
-        return Response(status_code=204, headers={"HX-Redirect": url})
-    return Response(status_code=303, headers={"Location": url})
-
-
-async def _form_dict(request: Request) -> dict:
-    form = await request.form()
-    return dict(form)
-
-
-def _redirect_error(request: Request, message: str) -> Response:
-    return _redirect(request, "/locations?" + urlencode({"error": message}))
 
 
 @router.post("/locations")
@@ -44,7 +32,7 @@ async def create_location(request: Request, db: Session = Depends(get_db)):
                 description=form.get("description"),
             )
         except ValueError as exc:
-            return _redirect_error(request, str(exc))
+            return _redirect_error(request, "/locations", str(exc))
     return _redirect(request, "/locations")
 
 
@@ -64,7 +52,7 @@ async def update_location(location_id: int, request: Request, db: Session = Depe
             description=form.get("description"),
         )
     except ValueError as exc:
-        return _redirect_error(request, str(exc))
+        return _redirect_error(request, "/locations", str(exc))
     return _redirect(request, "/locations")
 
 

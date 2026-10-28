@@ -22,41 +22,8 @@ from PySide6.QtWidgets import (
 from ..i18n import _
 from .repo import RemoteRepo, get_repo
 from .theme import AMBER, EMERALD, VIOLET, accent
-from .util import card, page_header, section_title
+from .util import card, clear_layout, page_header, section_title, stat_card
 from .workers import run_blocking
-
-
-def _stat_card(icon: str, label: str, color: str) -> tuple[QFrame, QLabel]:
-    frame = card()
-    value = QLabel("—")
-    value.setObjectName("StatValue")
-    value.setStyleSheet(f"color: {color};")
-    caption = QLabel(label)
-    caption.setObjectName("StatLabel")
-    caption.setWordWrap(True)
-    icon_label = QLabel(icon)
-    icon_label.setObjectName("StatIcon")
-
-    text_col = QVBoxLayout()
-    text_col.setSpacing(0)
-    text_col.addWidget(value)
-    text_col.addWidget(caption)
-
-    row = QHBoxLayout(frame)
-    row.setContentsMargins(18, 16, 18, 16)
-    row.addLayout(text_col)
-    row.addStretch(1)
-    row.addWidget(icon_label)
-    return frame, value
-
-
-def _clear(layout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.setParent(None)
-            widget.deleteLater()
 
 
 def _goal_card(goal: dict, on_remove=None) -> QFrame:
@@ -158,7 +125,7 @@ class ReadingView(QWidget):
             ("lost_donated", _("Lost / donated"), "🕳️", AMBER),
         ]
         for index, (key, label, icon, color) in enumerate(specs):
-            frame, value = _stat_card(icon, label, color)
+            frame, value = stat_card(icon, label, color, initial="—")
             self._values[key] = value
             grid.addWidget(frame, index // 3, index % 3)
         stats_layout.addLayout(grid)
@@ -285,7 +252,7 @@ class ReadingView(QWidget):
         self.year.blockSignals(False)
 
     def _render_goals(self, goals: list[dict]) -> None:
-        _clear(self.goals_host)
+        clear_layout(self.goals_host)
         if not goals:
             hint = QLabel(_("Set your goals above to see progress."))
             hint.setObjectName("Hint")

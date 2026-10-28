@@ -5,6 +5,12 @@ import 'package:intl/intl.dart';
 
 import 'models/models.dart';
 
+/// Trim a form's text field; an empty value means "not set", not `""`.
+String? blankToNull(String? value) {
+  final trimmed = (value ?? '').trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
 /// Flatten a location tree into ``(location, depth)`` pairs in display order.
 ///
 /// The API returns a flat list, so the parent relationships are walked here.

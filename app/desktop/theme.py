@@ -44,11 +44,6 @@ def set_theme(slug: str | None) -> themes.ColorTheme:
     return _active
 
 
-def current_theme() -> themes.ColorTheme:
-    """The theme in use right now."""
-    return _active
-
-
 def accent(shade: int = 500) -> str:
     """One shade of the active accent (``500`` when unsure)."""
     return _active.shade(shade)

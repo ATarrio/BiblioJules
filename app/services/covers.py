@@ -59,6 +59,19 @@ def new_cover_name(book, suffix: str) -> str:
     return f"book-{stable}-{secrets.token_hex(8)}{suffix}"
 
 
+def store_cover(book, content: bytes, suffix: str) -> tuple[str, str | None]:
+    """Write a validated image and point ``book`` at it.
+
+    Returns the new URL and the previous one, so the caller can delete the old
+    file after the database commit succeeds.
+    """
+    name = new_cover_name(book, suffix)
+    (covers_dir() / name).write_bytes(content)
+    old_url = book.cover_url
+    book.cover_url = f"/covers/{name}"
+    return book.cover_url, old_url
+
+
 def delete_cover(cover_url: str | None) -> None:
     path = local_cover_path(cover_url)
     if path is not None:

@@ -58,10 +58,10 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
           .lendBook(
             book.id,
             borrowerName: _borrower.text.trim(),
-            borrowerContact: _blankToNull(_contact.text),
+            borrowerContact: blankToNull(_contact.text),
             lentAt: _iso(_lentAt),
             dueAt: _dueAt == null ? null : _iso(_dueAt!),
-            notes: _blankToNull(_notes.text),
+            notes: blankToNull(_notes.text),
             markStatus: _markStatus,
           );
       _afterWrite(message);
@@ -99,11 +99,6 @@ class _BookLoanScreenState extends ConsumerState<BookLoanScreen> {
     if (!mounted) return;
     showSnack(context, message);
     context.pop();
-  }
-
-  String? _blankToNull(String value) {
-    final trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
   }
 
   @override

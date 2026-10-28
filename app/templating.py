@@ -38,7 +38,13 @@ templates.env.globals["score_label"] = score_label
 
 
 def _inject_i18n(request):
-    return {"current_language": i18n.get_language()}
+    language = i18n.get_language()
+    return {
+        "current_language": language,
+        # The full catalogue lets client-side code translate any source string
+        # without a second, hand-maintained map in base.html.
+        "catalog": i18n.load_catalog(language),
+    }
 
 
 templates.context_processors.append(_inject_i18n)

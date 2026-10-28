@@ -22,7 +22,7 @@ from .cover import CoverImage
 from .repo import RemoteRepo, get_repo
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, EMERALD, VIOLET, accent
-from .util import badge, card, page_header, section_title
+from .util import badge, card, clear_layout, page_header, section_title, stat_card
 from .workers import run_blocking
 from .. import i18n
 from ..i18n import _
@@ -30,41 +30,6 @@ from ..i18n import _
 _COLUMNS = 4
 #: Cover thumbnail width on a recent-book card (2:3, so ~1.5× tall).
 _COVER_WIDTH = 84
-
-
-def _clear(layout) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            # Unparent immediately so the old widget stops painting this frame
-            # (deleteLater alone can leave ghosts until the event loop runs).
-            widget.setParent(None)
-            widget.deleteLater()
-
-
-def _stat_card(icon: str, label: str, color: str) -> tuple[QFrame, QLabel]:
-    frame = card()
-    value = QLabel("0")
-    value.setObjectName("StatValue")
-    value.setStyleSheet(f"color: {color};")
-    caption = QLabel(label)
-    caption.setObjectName("StatLabel")
-    caption.setWordWrap(True)
-    icon_label = QLabel(icon)
-    icon_label.setObjectName("StatIcon")
-
-    text_col = QVBoxLayout()
-    text_col.setSpacing(0)
-    text_col.addWidget(value)
-    text_col.addWidget(caption)
-
-    row = QHBoxLayout(frame)
-    row.setContentsMargins(18, 16, 18, 16)
-    row.addLayout(text_col)
-    row.addStretch(1)
-    row.addWidget(icon_label)
-    return frame, value
 
 
 class BookCard(QFrame):
@@ -127,7 +92,7 @@ class DashboardView(QWidget):
             ("authors", _("Authors"), "✍️", EMERALD),
         ]
         for column, (key, label, icon, color) in enumerate(specs):
-            frame, value = _stat_card(icon, label, color)
+            frame, value = stat_card(icon, label, color)
             self._values[key] = value
             cards_row.addWidget(frame, 0, column)
         layout.addLayout(cards_row)
@@ -135,10 +100,10 @@ class DashboardView(QWidget):
         # --- personal reading stats (local-only view) --------------------- #
         personal_row = QGridLayout()
         personal_row.setSpacing(16)
-        frame, value = _stat_card("📖", _("Books read"), accent())
+        frame, value = stat_card("📖", _("Books read"), accent())
         self._values["books_read"] = value
         personal_row.addWidget(frame, 0, 0)
-        frame, value = _stat_card("🎯", _("Reading goal"), AMBER)
+        frame, value = stat_card("🎯", _("Reading goal"), AMBER)
         self._values["goal"] = value
         personal_row.addWidget(frame, 0, 1)
         layout.addLayout(personal_row)
@@ -167,9 +132,10 @@ class DashboardView(QWidget):
     @staticmethod
     def _fetch() -> tuple:
         repo = get_repo()
-        stats = repo.stats()
-        counts = repo.status_counts()
-        recent = repo.list_books(sort="recent")[:8]
+        data = repo.dashboard()
+        stats = data.get("stats", {})
+        counts = data.get("status_counts", [])
+        recent = data.get("recent", [])
         # Personal reading stats are a nice-to-have; a failure there must not
         # blank the headline numbers, exactly as before.
         try:
@@ -226,8 +192,7 @@ class DashboardView(QWidget):
         if current is None and goals:
             current = max(goals, key=lambda g: g.get("year") or 0)
         current = current or {}
-        progress = current.get("progress") or {}
-        goal_done = int(progress.get("books_read", 0) or 0)
+        goal_done = int(current.get("books_done", 0) or 0)
         target = int(current.get("target_books", 0) or 0)
         self._values["goal"].setText(f"{goal_done}/{target}" if target else _("Not set"))
 
@@ -238,7 +203,7 @@ class DashboardView(QWidget):
         BookDetailsDialog(self, book_id=book_id, on_change=self.on_change).exec()
 
     def _fill_statuses(self, counts) -> None:
-        _clear(self._status_grid)
+        clear_layout(self._status_grid)
         if not counts:
             self._status_grid.addWidget(QLabel(_("No statuses yet.")), 0, 0)
             return
@@ -276,7 +241,7 @@ class DashboardView(QWidget):
             )
 
     def _fill_recent(self, recent: list[dict]) -> None:
-        _clear(self._recent_grid)
+        clear_layout(self._recent_grid)
         if not recent:
             empty = QLabel(_("📖  No books yet — add one from the Catalog tab."))
             empty.setObjectName("Muted")

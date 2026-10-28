@@ -8,12 +8,13 @@ administrator decides who gets in (see the admin panel and ``app/cli.py``).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
+from .common import utc_now
 
 ROLE_ADMIN = "admin"
 ROLE_MEMBER = "member"
@@ -34,7 +35,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=utc_now
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

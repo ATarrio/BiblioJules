@@ -13,8 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import __version__
+from .bootstrap import prepare_database, sync_on_start
 from .config import settings
-from .database import Base, SessionLocal, engine, ensure_sync_schema
 from .dependencies import (
     AuthenticationRequired,
     PermissionDenied,
@@ -23,8 +24,6 @@ from .dependencies import (
 )
 from .i18n import LanguageMiddleware, _
 from .routers import admin, api, auth, books, health, import_route as import_router, locations, lookup, pages, statuses
-from .services.library import prune_orphans, sync_published_years
-from .services.seed import seed_defaults
 from .templating import templates
 
 logging.basicConfig(level=logging.INFO)
@@ -34,35 +33,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on first run; any columns added to the models since an
-    # older database was created are applied by ensure_sync_schema() below.
-    Base.metadata.create_all(bind=engine)
-    # New columns, sync ids and the indexes a merge relies on.
-    ensure_sync_schema()
-
-    # Seed the built-in statuses (available, reading, lent, wishlist...).
-    db = SessionLocal()
-    try:
-        seed_defaults(db)
-        # Fold legacy year-only rows into the single "Published" field.
-        sync_published_years(db)
-        # Clear out authors/publishers left behind by earlier book deletions.
-        prune_orphans(db)
-    finally:
-        db.close()
-
-    # Optional: merge the shared snapshot once at start-up. Failures must never
-    # stop the app from opening — the library is more important than the sync.
+    prepare_database()
     if settings.sync_on_start:
-        from .services import sync as sync_service
-
-        try:
-            sync_service.sync_now()
-        except sync_service.SyncError as exc:
-            logging.warning("Shared library not synced: %s", exc)
-        except Exception:  # pragma: no cover - unexpected filesystem trouble
-            logging.exception("Shared library sync failed")
-
+        sync_on_start()
     yield
 
 
@@ -71,7 +44,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         description=settings.app_description,
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,

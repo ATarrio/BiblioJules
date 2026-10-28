@@ -9,13 +9,12 @@ server) and, for remote mode, the access token — so the file is written with
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
+from typing import Callable
 
 from . import themes
 from .config import DATA_DIR
 from .i18n import DEFAULT_LANGUAGE, normalize_language
+from .services.jsonstore import load_json, save_json, update_json_object
 
 PREFS_FILE = DATA_DIR / "preferences.json"
 
@@ -26,25 +25,17 @@ MODES = (MODE_LOCAL, MODE_REMOTE)
 
 
 def load_preferences() -> dict:
-    try:
-        with PREFS_FILE.open(encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
-        return {}
+    data = load_json(PREFS_FILE, {})
     return data if isinstance(data, dict) else {}
 
 
 def save_preferences(preferences: dict) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = Path(str(PREFS_FILE) + ".tmp")
-    with tmp.open("w", encoding="utf-8") as handle:
-        json.dump(preferences, handle, ensure_ascii=False, indent=2)
-    try:
-        # The file can hold a remote access token; keep it private to the user.
-        os.chmod(tmp, 0o600)
-    except OSError:  # pragma: no cover - non-POSIX filesystems
-        pass
-    tmp.replace(PREFS_FILE)
+    save_json(PREFS_FILE, preferences)
+
+
+def _update_preferences(mutate: Callable[[dict], None]) -> dict:
+    """Apply one change without losing a concurrent writer's update."""
+    return update_json_object(PREFS_FILE, mutate)
 
 
 def get_preferred_language() -> str:
@@ -52,10 +43,8 @@ def get_preferred_language() -> str:
 
 
 def set_preferred_language(code: str) -> str:
-    preferences = load_preferences()
     language = normalize_language(code)
-    preferences["language"] = language
-    save_preferences(preferences)
+    _update_preferences(lambda preferences: preferences.update(language=language))
     return language
 
 
@@ -68,10 +57,10 @@ def get_color_theme() -> str:
 
 
 def set_color_theme(slug: str) -> str:
-    preferences = load_preferences()
     color_theme = themes.normalize_theme(slug)
-    preferences["color_theme"] = color_theme
-    save_preferences(preferences)
+    _update_preferences(
+        lambda preferences: preferences.update(color_theme=color_theme)
+    )
     return color_theme
 
 
@@ -85,9 +74,7 @@ def get_mode() -> str:
 
 def set_mode(mode: str) -> str:
     value = mode if mode in MODES else MODE_LOCAL
-    preferences = load_preferences()
-    preferences["mode"] = value
-    save_preferences(preferences)
+    _update_preferences(lambda preferences: preferences.update(mode=value))
     return value
 
 
@@ -107,12 +94,14 @@ def set_remote_session(
     *, backend_url: str | None = None, token: str | None = None, account: str | None = None
 ) -> None:
     """Store (or, with empty values, clear) the remote connection details."""
-    preferences = load_preferences()
-    if backend_url is not None:
-        preferences["backend_url"] = backend_url.strip()
-    preferences["api_token"] = (token or "").strip()
-    preferences["account_name"] = (account or "").strip()
-    save_preferences(preferences)
+
+    def mutate(preferences: dict) -> None:
+        if backend_url is not None:
+            preferences["backend_url"] = backend_url.strip()
+        preferences["api_token"] = (token or "").strip()
+        preferences["account_name"] = (account or "").strip()
+
+    _update_preferences(mutate)
 
 
 # --------------------------------------------------------------------------- #
@@ -127,10 +116,8 @@ def get_sync_file() -> str:
 
 
 def set_sync_file(path: str) -> str:
-    preferences = load_preferences()
     value = (path or "").strip()
-    preferences["sync_file"] = value
-    save_preferences(preferences)
+    _update_preferences(lambda preferences: preferences.update(sync_file=value))
     return value
 
 
@@ -139,7 +126,8 @@ def get_sync_on_start() -> bool:
 
 
 def set_sync_on_start(enabled: bool) -> bool:
-    preferences = load_preferences()
-    preferences["sync_on_start"] = bool(enabled)
-    save_preferences(preferences)
-    return bool(enabled)
+    value = bool(enabled)
+    _update_preferences(
+        lambda preferences: preferences.update(sync_on_start=value)
+    )
+    return value

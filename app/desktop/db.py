@@ -13,10 +13,9 @@ from typing import Iterator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..database import Base, SessionLocal, engine, ensure_sync_schema
+from ..bootstrap import prepare_database
+from ..database import SessionLocal
 from ..i18n import _
-from ..services.library import prune_orphans, sync_published_years
-from ..services.seed import seed_defaults
 
 
 @contextmanager
@@ -61,12 +60,4 @@ def initialize_database() -> None:
     Mirrors the FastAPI ``lifespan`` startup hook so the desktop app can be
     launched first and still produce a usable, seeded catalog.
     """
-    Base.metadata.create_all(bind=engine)
-    # Bring an older database up to date with any new columns.
-    ensure_sync_schema()
-    with session_scope() as db:
-        seed_defaults(db)
-        # Fold legacy year-only rows into the single "Published" field.
-        sync_published_years(db)
-        # Clear out authors/publishers left behind by earlier book deletions.
-        prune_orphans(db)
+    prepare_database()

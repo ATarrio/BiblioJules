@@ -15,7 +15,6 @@ account say so explicitly.
 from __future__ import annotations
 
 import secrets
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
