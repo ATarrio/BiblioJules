@@ -64,9 +64,16 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   bool _loading = false;
   bool _saving = false;
   bool _lookingUp = false;
+  bool _keepOpen = false;
   final _sagaFocus = FocusNode();
 
   bool get _isEdit => widget.bookId != null;
+
+  /// The bulk-add toggle is only offered on the plain add form: not when
+  /// editing a book, and not when the form was opened from a want-to-read
+  /// entry, whose save must pop so the caller can drop that entry.
+  bool get _canKeepOpen => !_isEdit && widget.initialWantEntry == null;
+  bool get _bulk => _keepOpen && _canKeepOpen;
 
   @override
   void initState() {
@@ -208,10 +215,17 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       }
       invalidateBooks(ref);
       if (!mounted) return;
-      showSnack(context, context.localized.tr(_isEdit ? 'Book saved.' : 'Book added.'));
-      // Opened from a want-to-read entry: report success so the caller can drop
-      // that entry. Cancelling pops with null, leaving the entry untouched.
-      context.pop(widget.initialWantEntry != null && !_isEdit ? true : null);
+      if (_bulk) {
+        // Bulk mode: the form stays open. Clear what the next lookup fills in
+        // and keep the shelf, status and notes for the next book.
+        showSnack(context, context.localized.tr('Added. Scan or type the next ISBN.'));
+        _resetForNext();
+      } else {
+        showSnack(context, context.localized.tr(_isEdit ? 'Book saved.' : 'Book added.'));
+        // Opened from a want-to-read entry: report success so the caller can drop
+        // that entry. Cancelling pops with null, leaving the entry untouched.
+        context.pop(widget.initialWantEntry != null && !_isEdit ? true : null);
+      }
     } on ApiAuthException catch (error) {
       await ref.read(sessionProvider.notifier).handleRejectedToken(error.message);
     } on ApiException catch (error) {
@@ -220,6 +234,33 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     } finally {
       if (mounted && _saving) setState(() => _saving = false);
     }
+  }
+
+  /// Clear the form for the next bulk save: everything an ISBN lookup fills in
+  /// is emptied again, while location, status and notes carry over (the web
+  /// edition's sticky fields).
+  void _resetForNext() {
+    setState(() {
+      _isbn.clear();
+      _title.clear();
+      _subtitle.clear();
+      _authors.clear();
+      _publisher.clear();
+      _publishedDate.clear();
+      _pageCount.clear();
+      _language.clear();
+      _coverUrl.clear();
+      _coverType = null;
+      _readStatus = null;
+      _score = null;
+      _saga.clear();
+      _sagaNumber = null;
+      _description.clear();
+      _collaborators.clear();
+      _translators.clear();
+      _illustrators.clear();
+      _source = 'manual';
+    });
   }
 
   /// Fill in what we can from Open Library / Google Books.
@@ -236,6 +277,16 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       if (existing != null && existing.id != widget.bookId) {
         if (!mounted) return;
         setState(() => _lookingUp = false);
+        if (_bulk) {
+          // Bulk scanning a shelf: an already-catalogued book must not close
+          // the form. Say so and let the user point the camera at the next one.
+          showSnack(
+            context,
+            context.localized.tf('This ISBN is already in your library: “%s”.', [existing.title]),
+            isError: true,
+          );
+          return;
+        }
         final open = await confirmAction(
           context,
           title: context.localized.tr('Already in your library'),
@@ -343,28 +394,32 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Tooltip(
-                  message: l10n.tr('Scan a barcode'),
-                  child: FilledButton.icon(
-                    onPressed: _scan,
-                    icon: const Icon(Icons.qr_code_scanner, size: 24),
-                    label: const Text('Scan'),
-                  ),
+                IconButton.filled(
+                  tooltip: l10n.tr('Scan a barcode'),
+                  icon: const Icon(Icons.qr_code_scanner, size: 24),
+                  onPressed: _scan,
                 ),
-                const SizedBox(width: 4),
-                Tooltip(
-                  message: l10n.tr('Look up online'),
-                  child: TextButton.icon(
-                    onPressed: _lookingUp ? null : _lookup,
-                    icon: _lookingUp
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.cloud_download_outlined),
-                    label: Text(_lookingUp ? '' : l10n.tr('Look up')),
+                if (_canKeepOpen) ...[
+                  const SizedBox(width: 10),
+                  IconButton(
+                    tooltip: l10n.tr('Keep open to add several books in a row'),
+                    isSelected: _keepOpen,
+                    selectedIcon: const Icon(Icons.repeat),
+                    icon: const Icon(Icons.repeat_outlined),
+                    onPressed: () => setState(() => _keepOpen = !_keepOpen),
                   ),
+                ],
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: l10n.tr('Look up online'),
+                  icon: _lookingUp
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.search),
+                  onPressed: _lookingUp ? null : _lookup,
                 ),
               ],
             ),

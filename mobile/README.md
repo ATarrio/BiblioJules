@@ -37,6 +37,9 @@ stays in the keystore, so going back and forth needs no re-signing-in.
 - **Reading** — personal stats, yearly reading goals with progress, and a
   want-to-read list. The same tab imports a Goodreads/StoryGraph CSV.
 - **Scan** — read an ISBN barcode with the camera and prefill the book form.
+- **Bulk add** — with the repeat toggle next to the scan button, the add form
+  stays open after each save: only the location, status and notes carry over to
+  the next book, so a whole shelf can be scanned in one sitting.
 - **Locations** and **Statuses** — the same nested shelf tree and custom labels
   as the web app.
 - **Books** — add/edit/delete, lend and return, with loan history, and upload a

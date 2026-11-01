@@ -49,8 +49,9 @@ Capturas de pantalla de la app Android (todas tomadas en un teléfono; se muestr
 - **Carga por lotes.** Marca *Mantener este formulario abierto* y el formulario
   de alta sigue abierto después de cada guardado: los datos del ISBN se limpian,
   mientras que la ubicación, el estado y las notas se conservan, así puedes
-  escanear un estante entero de una sola vez. La app de escritorio tiene la
-  misma opción en su diálogo de alta.
+  escanear un estante entero de una sola vez. La app de escritorio y la de
+  Android tienen la misma opción en su formulario de alta (en el teléfono,
+  es el botón de repetición junto al de escanear).
 - **Ubicaciones jerárquicas.** Modela tu casa como quieras: habitaciones →
   bibliotecas → estantes → cajas. Elige una ubicación de una lista con sangría
   al agregar un libro, en lugar de escribirla.

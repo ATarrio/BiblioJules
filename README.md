@@ -46,8 +46,9 @@ Android app screenshots (all captured on a phone; shown scaled down here):
   manually with the same form.
 - **Bulk add.** Tick *Keep this form open* and the add form stays up after each
   save: the ISBN details are cleared, while the location, status and notes stay
-  put, so a whole shelf can be scanned in one sitting. The desktop app has the
-  same option on its add dialog.
+  put, so a whole shelf can be scanned in one sitting. The desktop and phone
+  apps have the same option on their add dialogs — on the phone it is a repeat
+  toggle next to the scan button.
 - **Hierarchical locations.** Model your home as you like — rooms → bookcases
   → shelves → boxes. Pick a location from an indented list when adding a book
   instead of typing it out.
