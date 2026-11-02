@@ -58,6 +58,9 @@ if [[ $clean == true ]]; then
 fi
 flutter pub get
 
+# Keep the About screen in step with pubspec.yaml before compiling it in.
+./scripts/sync_version.sh
+
 # pubspec.yaml holds the version as <version>+<build>; the build number is what
 # the Play Console calls a release, and it has to be higher than the last one.
 version=$(sed -n 's/^version: *\([0-9][0-9.]*+\([0-9][0-9]*\)\).*$/\1/p' pubspec.yaml)

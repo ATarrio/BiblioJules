@@ -103,6 +103,20 @@ release before it:
 `scripts/release.sh` prints the number it is about to build, so a refused
 upload is a matter of bumping `pubspec.yaml` and running it again.
 
+The About screen shows the semantic version (the part before `+`). It is read
+from `lib/src/core/version.g.dart`, which `scripts/sync_version.sh` regenerates
+from `pubspec.yaml`; `release.sh` runs it before building, so a release never
+ships a stale version. If you build directly with `flutter build apk` or
+`flutter build appbundle`, run the sync script first:
+
+```bash
+./scripts/sync_version.sh
+flutter build apk --split-per-abi --release
+```
+
+`flutter test test/version_test.dart` fails if `version.g.dart` and
+`pubspec.yaml` disagree.
+
 ---
 
 ## What the Console wants
