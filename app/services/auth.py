@@ -119,6 +119,15 @@ def username_problem(username: str | None) -> str | None:
     return None
 
 
+def username_shape_ok(username: str | None) -> bool:
+    """Cheap login guard: attacker-shaped names must never reach the hash."""
+    username = normalize_username(username)
+    return (
+        _MIN_USERNAME_LENGTH <= len(username) <= _MAX_USERNAME_LENGTH
+        and _USERNAME_RE.match(username) is not None
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Time helpers (SQLite hands datetimes back naive)
 # --------------------------------------------------------------------------- #

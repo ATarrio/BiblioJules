@@ -313,7 +313,9 @@ def update_location(location_id: int, payload: LocationIn, db: Session = Depends
             db,
             location,
             name=payload.name,
-            parent_id=payload.parent_id,
+            # Documented PUT semantics: omitted means untouched. The service
+            # keeps the current parent only behind its Ellipsis sentinel.
+            parent_id=... if "parent_id" not in payload.model_fields_set else payload.parent_id,
             kind=payload.kind,
             description=payload.description,
         )
@@ -364,7 +366,9 @@ def update_status(status_id: int, payload: StatusIn, db: Session = Depends(get_d
             db,
             status,
             name=payload.name,
-            color=payload.color,
+            # Omitted color = keep the current one (the schema default would
+            # silently repaint the status otherwise).
+            color=payload.color if "color" in payload.model_fields_set else None,
             icon=payload.icon,
             description=payload.description,
         )

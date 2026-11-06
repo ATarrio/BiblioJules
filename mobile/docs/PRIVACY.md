@@ -27,7 +27,15 @@ BiblioJules is an open-source library/catalog application. **BiblioJules runs no
 Your library catalog, reading history, notes, and settings remain stored locally on your phone. You can delete them by clearing the app's storage in Android Settings.
 
 ### When you connect to a server (sync mode)
-The app communicates with **the server URL you provide** over HTTPS (`usesCleartextTraffic="false"` enforces this). The data transmitted is the catalog/book data you choose to sync (e.g., loan status, notes, shelf assignments). **Your server handles authentication, storage, and account management — not BiblioJules.** Your server may store user accounts and passwords; BiblioJules does not see or store them.
+The app communicates with **the server URL you provide** over HTTPS (strongly recommended), or over plain HTTP **when you choose it**: the release manifest permits cleartext (`android:usesCleartextTraffic="true"`, with a bundled `network_security_config.xml` setting `cleartextTrafficPermitted="true"`), which is what lets a home-network library server without a certificate work. The data transmitted is the catalog/book data you choose to sync (e.g., loan status, notes, shelf assignments). **Your server handles authentication, storage, and account management — not BiblioJules.** Your server may store user accounts and passwords; BiblioJules does not see or store them.
+
+### Third-party requests (local mode)
+Even with no server configured, the phone itself queries public book catalogues when you look up an ISBN or search a title, and those requests leave your device:
+
+- **Open Library** — `https://openlibrary.org/api/books`, `https://openlibrary.org/search.json` and `https://covers.openlibrary.org` (book metadata, free-text search, cover images).
+- **Google Books** — `https://www.googleapis.com/books/v1/volumes` (fallback lookup and title search).
+
+These requests carry only the ISBN or search text you entered. Their own privacy notices apply: Open Library (https://openlibrary.org/privacy) and Google (https://policies.google.com/privacy).
 
 ## Permissions used
 

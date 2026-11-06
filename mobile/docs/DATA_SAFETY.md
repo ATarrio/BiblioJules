@@ -12,6 +12,7 @@
 
 ## Data collected by your server (if you sync)
 - **Only the data you choose to sync** (e.g., book titles, loan status, user notes) when using the sync feature.
+- **Loan records you enter** (borrower name and contact, lent/due/returned dates) if you use the lending tracker — they sync with the rest of the catalogue.
 - **Your server also holds user accounts and passwords** if you configure authentication.
 - This is handled by your server, not by BiblioJules.
 
@@ -20,7 +21,7 @@
 - When syncing, data is processed on your server (which you control).
 
 ## Data encryption
-- **In transit**: HTTPS is required (`android:usesCleartextTraffic="false"`).
+- **In transit**: HTTPS is strongly recommended but not enforced — the release manifest sets `android:usesCleartextTraffic="true"` and `android/app/src/main/res/xml/network_security_config.xml` permits cleartext (`cleartextTrafficPermitted="true"`), so a user-configured server can be reached over plain HTTP (home-network libraries without a certificate).
 - **At rest**: Depends on your server's configuration.
 
 ## Data security

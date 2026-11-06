@@ -90,7 +90,7 @@ that is why the bundle needs no ABI version bump in `versionCode`.
 
 ## Versions and build numbers
 
-`pubspec.yaml` carries `version: 0.1.0+1`. The part after the `+` is the **build
+`pubspec.yaml` carries `version: 0.5.0+7`. The part after the `+` is the **build
 number**, and the Console refuses an upload whose number is not higher than the
 release before it:
 
@@ -141,9 +141,13 @@ what it rejects.
 
 ### HTTPS
 
-The release manifest sets `android:usesCleartextTraffic="false"`, so a published
-build refuses a plain-HTTP server: the `http://10.0.2.2:8000` the sign-in screen
-suggests works only in a debug build. A listing needs the server behind HTTPS.
+The release manifest sets `android:usesCleartextTraffic="true"`, and
+`android/app/src/main/res/xml/network_security_config.xml` permits cleartext
+(`cleartextTrafficPermitted="true"`), so a published build **can** reach a plain-HTTP
+server: the `http://10.0.2.2:8000` the sign-in screen suggests works for a library
+on your network without a certificate. HTTPS is still strongly recommended —
+`normalizeBaseUrl()` upgrades public hostnames to HTTPS, and a listing should
+point at a server behind HTTPS.
 
 ### Account deletion
 
@@ -168,4 +172,4 @@ upload from a service-account credential; that is a later step, not a first one.
 | Console rejects the build number | `pubspec.yaml` was not bumped |
 | Black screen, release only | R8 renamed a class a plugin reaches by name; `android/app/proguard-rules.pro` holds those keeps |
 | Icons vanish after `--obfuscate` | Add `--no-tree-shake-icons` to the build |
-| A server is refused | Plain HTTP against `usesCleartextTraffic="false"` |
+| A server is refused | Unreachable address or a rejected HTTPS certificate; plain HTTP is permitted |

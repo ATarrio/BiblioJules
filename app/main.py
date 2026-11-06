@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -29,6 +29,25 @@ from .templating import templates
 logging.basicConfig(level=logging.INFO)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+#: The UI loads its libraries from CDNs (base.html: Tailwind Play, HTMX on
+#: unpkg, Alpine on jsDelivr, Google Fonts), book covers may be absolute
+#: https URLs, and the inline theme boot script plus inline style attributes
+#: need 'unsafe-inline'. /docs adds Swagger UI, also served from jsDelivr.
+CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com "
+        "https://unpkg.com https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+        "https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+        "img-src 'self' data: https:",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "base-uri 'self'",
+    )
+)
 
 
 @asynccontextmanager
@@ -62,6 +81,22 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # Baseline browser hardening for every response: the page must not be
+    # framed, must not sniff wrong MIME types, must not leak referrers, and
+    # gets a CSP that whitelists only the CDN hosts base.html actually loads.
+    # Dynamic, authenticated content must also never sit in a shared cache —
+    # only the immutable /static assets and the uploaded /covers images may.
+    @app.middleware("http")
+    async def security_headers(request: Request, response: Response) -> Response:
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+        path = request.url.path
+        if not (path == "/static" or path.startswith("/static/") or path.startswith("/covers/")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

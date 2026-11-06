@@ -188,8 +188,11 @@ def run_sync(request: Request):
         return _redirect(request, "/admin/sync?" + _error_param(str(exc)))
     except Exception as exc:  # pragma: no cover - unexpected filesystem trouble
         logging.exception("Shared library sync failed")
+        # Only the error class is echoed: raw exception text can carry paths
+        # or other internals that a browser page should never show.
         return _redirect(
-            request, "/admin/sync?" + _error_param(_("The sync failed: %s") % exc)
+            request,
+            "/admin/sync?" + _error_param(_("The sync failed: %s") % type(exc).__name__),
         )
     return _redirect(request, "/admin/sync?" + _ok_param(_sync_summary(result)))
 

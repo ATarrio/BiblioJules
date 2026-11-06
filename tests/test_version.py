@@ -19,7 +19,7 @@ def _pubspec_version() -> str:
 
 def _mobile_constant() -> str:
     text = (
-        ROOT / "mobile" / "lib" / "src" / "core" / "providers.dart"
+        ROOT / "mobile" / "lib" / "src" / "core" / "version.g.dart"
     ).read_text(encoding="utf-8")
     match = re.search(r"kAppVersion\s*=\s*'([^']+)'", text)
     assert match is not None

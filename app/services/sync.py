@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import sqlite3
 import time
@@ -44,13 +45,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from ..config import settings
+from ..config import BASE_DIR, DATA_DIR, settings
 from ..database import SYNCED_TABLES
 
 # The colour rules live with the library (one status writer, one validator):
 # a snapshot arriving from a shared folder is re-checked through the very same
 # normalize_color before its rows are merged.
-from .library import normalize_color
+from .library import normalize_color, safe_cover_url
 
 #: Bumped if the layout of a snapshot (not the library schema) ever changes.
 FORMAT = 1
@@ -107,6 +108,9 @@ BOOK_FIELDS = (
     "saga_number",
     "source",
     "notes",
+    "collaborators",
+    "translators",
+    "illustrators",
 )
 LOAN_FIELDS = (
     "borrower_name",
@@ -367,6 +371,15 @@ def resolve_target(value: str | Path | None = None, *, db_path: Path | None = No
         # Publishing runs ``VACUUM INTO`` plus ``os.replace``: pointing the
         # shared file at this very library would overwrite the live database.
         raise SyncError("The shared library file cannot be this library itself.")
+    # A snapshot is created with VACUUM INTO and swapped into place, so a
+    # setting pointing anywhere else inside the application tree (run.py,
+    # .env, requirements files...) would overwrite that file on the first
+    # push. Only the DATA_DIR subtree belongs to the app.
+    resolved = target.resolve()
+    if resolved.is_relative_to(BASE_DIR) and not resolved.is_relative_to(DATA_DIR):
+        raise SyncError(
+            "The shared library file cannot live inside the application folder."
+        )
     return target
 
 
@@ -656,6 +669,18 @@ def _by(rows: list[dict], key: str) -> dict:
     return {row[key]: row for row in rows if row.get(key)}
 
 
+_SYNC_ID_RE = re.compile(r"\A[0-9a-fA-F]{32}\Z")
+
+
+def _sync_id_ok(value: object) -> bool:
+    """A snapshot's sync_id must look like ours before anything matches on it.
+
+    A tampered file could otherwise smuggle arbitrary strings into the
+    ``sync_id`` columns, the tombstone matching and cover-file names.
+    """
+    return isinstance(value, str) and _SYNC_ID_RE.match(value) is not None
+
+
 def _insert(connection: sqlite3.Connection, table: str, row: dict) -> int:
     columns = [name for name in row if name != "id"]
     placeholders = ", ".join("?" for _ in columns)
@@ -851,6 +876,22 @@ def _apply_remote_tombstones(
         ).fetchone()
         if local is None or _stamp(tombstone["deleted_at"]) < _stamp(local["updated_at"]):
             continue
+        # Raw DELETEs bypass SQLAlchemy's FK cascades, and SQLite only runs
+        # its own cascades when built with foreign-key enforcement — so the
+        # dependants are cleaned here by hand: dangling loans or author links
+        # would abort the final foreign_key_check on such builds, and an
+        # unrecorded loan tombstone would resurrect loan history elsewhere.
+        for loan in connection.execute(
+            "SELECT * FROM loans WHERE book_id = ?", (local["id"],)
+        ):
+            if loan["sync_id"]:
+                _remember_remote_tombstone(
+                    connection,
+                    "loans",
+                    {"sync_id": loan["sync_id"], "deleted_at": tombstone["deleted_at"]},
+                )
+        connection.execute("DELETE FROM loans WHERE book_id = ?", (local["id"],))
+        connection.execute("DELETE FROM book_authors WHERE book_id = ?", (local["id"],))
         connection.execute("DELETE FROM books WHERE id = ?", (local["id"],))
         _remember_remote_tombstone(connection, "books", tombstone)
         summary.bump(summary.deleted, "books")
@@ -871,6 +912,12 @@ def _apply_remote_tombstones(
             local = local_by_sync.get(tombstone["sync_id"])
             if local is None or _stamp(tombstone["deleted_at"]) < _stamp(local["updated_at"]):
                 continue
+            # Books on this shelf lose their home (same cascade the live app
+            # does); without it the FK from books.location_id dangles.
+            connection.execute(
+                "UPDATE books SET location_id = NULL WHERE location_id = ?",
+                (local["id"],),
+            )
             connection.execute(
                 "UPDATE locations SET parent_id = ? WHERE parent_id = ?",
                 (local["parent_id"], local["id"]),
@@ -911,7 +958,7 @@ def _merge_statuses(
 
     for remote in remote_rows:
         sync_id = remote.get("sync_id")
-        if not sync_id:
+        if not _sync_id_ok(sync_id):
             continue
         if _blocked_by_local_tombstone(connection, "statuses", sync_id, remote.get("updated_at")):
             continue
@@ -975,7 +1022,7 @@ def _merge_locations(
 
     for remote in ordered:
         sync_id = remote.get("sync_id")
-        if not sync_id:
+        if not _sync_id_ok(sync_id):
             continue
         if _blocked_by_local_tombstone(connection, "locations", sync_id, remote.get("updated_at")):
             continue
@@ -1034,7 +1081,7 @@ def _merge_names(
 
     for remote in remote_rows:
         sync_id = remote.get("sync_id")
-        if not sync_id:
+        if not _sync_id_ok(sync_id):
             continue
         if _blocked_by_local_tombstone(connection, table, sync_id, remote.get("updated_at")):
             continue
@@ -1090,7 +1137,7 @@ def _merge_books(
 
     for remote_row in remote_rows:
         sync_id = remote_row.get("sync_id")
-        if not sync_id:
+        if not _sync_id_ok(sync_id):
             continue
         if _blocked_by_local_tombstone(connection, "books", sync_id, remote_row.get("updated_at")):
             continue
@@ -1106,6 +1153,9 @@ def _merge_books(
         values["location_id"] = location_map.get(location_sync.get(remote_row.get("location_id")))
         values["status_id"] = status_map.get(status_sync.get(remote_row.get("status_id")))
         values["updated_at"] = remote_row.get("updated_at") or stamp_now()
+        # A tampered snapshot must not smuggle javascript:/data: URLs that
+        # the web UI would render as <img src> (same rule as library.py).
+        values["cover_url"] = safe_cover_url(values.get("cover_url"))
 
         if local is None:
             values["sync_id"] = sync_id
@@ -1188,7 +1238,7 @@ def _merge_loans(
 
     for remote_row in remote_rows:
         sync_id = remote_row.get("sync_id")
-        if not sync_id:
+        if not _sync_id_ok(sync_id):
             continue
         remote_book_sync = book_sync.get(remote_row.get("book_id"))
         book_id = book_map.get(remote_book_sync) if remote_book_sync else None

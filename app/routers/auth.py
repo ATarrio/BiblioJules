@@ -163,8 +163,18 @@ async def login(request: Request, db: Session = Depends(get_db)):
             db, request, username, next_url, _("Your session expired. Please try again.")
         )
 
-    keys = [f"ip:{rate_limit.client_key(request)}", f"user:{username.casefold()}"]
-    wait = rate_limit.retry_after(keys)
+    if not auth.username_shape_ok(username):
+        # Reject guesses that could never name a real account before they
+        # reach the memory-hard hash; the form echoes at most a sane length.
+        return _login_error(
+            db,
+            request,
+            username[:auth._MAX_USERNAME_LENGTH],
+            next_url,
+            _("Incorrect username or password.") if auth.count_users(db) else None,
+        )
+
+    wait = rate_limit.login_retry_after(request, username)
     if wait:
         return _login_error(
             db,
@@ -177,7 +187,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
     user = auth.authenticate(db, username, password)
     if user is None:
-        rate_limit.record_failure(keys)
+        rate_limit.login_failure(request, username)
         return _login_error(
             db,
             request,
@@ -185,7 +195,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
             next_url,
             _("Incorrect username or password.") if auth.count_users(db) else None,
         )
-    rate_limit.reset(keys)
+    rate_limit.login_success(request, username)
 
     raw, _token = auth.create_token(
         db, user, kind=KIND_WEB, label=(request.headers.get("user-agent") or "")[:120]
@@ -240,8 +250,10 @@ def logout(request: Request, db: Session = Depends(get_db), user: User = Depends
 # --------------------------------------------------------------------------- #
 @router.post("/api/auth/login")
 def api_login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
-    keys = [f"ip:{rate_limit.client_key(request)}", f"user:{payload.username.casefold()}"]
-    wait = rate_limit.retry_after(keys)
+    if not auth.username_shape_ok(payload.username):
+        # Never hand attacker-shaped names to the memory-hard hash.
+        return JSONResponse({"detail": "Incorrect username or password."}, status_code=401)
+    wait = rate_limit.login_retry_after(request, payload.username)
     if wait:
         return JSONResponse(
             {
@@ -253,11 +265,11 @@ def api_login(payload: LoginIn, request: Request, db: Session = Depends(get_db))
         )
     user = auth.authenticate(db, payload.username, payload.password)
     if user is None:
-        rate_limit.record_failure(keys)
+        rate_limit.login_failure(request, payload.username)
         return JSONResponse(
             {"detail": "Incorrect username or password."}, status_code=401
         )
-    rate_limit.reset(keys)
+    rate_limit.login_success(request, payload.username)
     raw, token = auth.create_token(
         db,
         user,

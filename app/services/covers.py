@@ -8,6 +8,7 @@ replaced.
 
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 
@@ -56,6 +57,10 @@ def local_cover_path(cover_url: str | None) -> Path | None:
 def new_cover_name(book, suffix: str) -> str:
     """A random, collision-resistant filename tied to the book's sync id."""
     stable = getattr(book, "sync_id", None) or str(getattr(book, "id", "book"))
+    # The name is interpolated into a path as-is: a row imported from a
+    # foreign database could carry a sync_id with separators or dot names,
+    # which would write the cover outside ``data/covers``.
+    stable = re.sub(r"[^A-Za-z0-9_-]", "", str(stable)) or "book"
     return f"book-{stable}-{secrets.token_hex(8)}{suffix}"
 
 

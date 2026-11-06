@@ -28,7 +28,7 @@ CSRF_COOKIE = "bj_csrf"
 CSRF_HEADER = "x-csrf-token"
 CSRF_FIELD = "_csrf"
 
-SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 # --------------------------------------------------------------------------- #
@@ -128,6 +128,11 @@ async def _enforce_csrf(request: Request) -> None:
 
     expected = getattr(request.state, "csrf", None)
     if not expected:
+        token = getattr(request.state, "token", None)
+        if token is not None and getattr(token, "kind", None) == KIND_WEB:
+            # A web session whose token has no CSRF value (rows predating
+            # the upgrade): fail closed instead of silently skipping.
+            raise CsrfError()
         return
 
     submitted = request.headers.get(CSRF_HEADER)

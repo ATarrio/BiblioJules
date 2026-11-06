@@ -262,6 +262,9 @@ def get_book(db: Session, book_id: int) -> Book | None:
 
 def delete_book(db: Session, book: Book) -> None:
     tombstones.record(db, "books", book.sync_id)
+    # The loans vanish with the book (FK cascade) — their deletions must
+    # travel too, or other devices would push the loan history back.
+    tombstones.record_many(db, "loans", (loan.sync_id for loan in book.loans))
     db.delete(book)
     # Flush so the book's author links are gone before we look for orphans.
     db.flush()

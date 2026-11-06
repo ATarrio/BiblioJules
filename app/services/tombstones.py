@@ -5,9 +5,10 @@ or simply never created. The only way to tell is to keep a note when a
 user-facing delete happens, and let that note travel in the snapshot. See
 ``app/models/sync.py`` for how the merge reads them.
 
-Only the tables with a delete button record tombstones. Loans disappear with
-their book (the book's tombstone is enough), and ``prune_orphans`` is garbage
-collection rather than a user delete, so it stays silent.
+Only the tables with a delete button record tombstones. Loans that cascade
+away with their book get a tombstone of their own — a merge must not resurrect
+loan history on a device that never saw the deletion. ``prune_orphans`` is
+garbage collection rather than a user delete, so it stays silent.
 """
 
 from __future__ import annotations

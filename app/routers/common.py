@@ -7,7 +7,7 @@ page load. Keeping those rules in one place stops the routers from drifting.
 
 from __future__ import annotations
 
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import HTTPException, Request
 from fastapi.responses import Response
@@ -17,6 +17,11 @@ from ..templating import templates
 
 def redirect(request: Request, url: str) -> Response:
     """Redirect, transparently supporting HTMX requests."""
+    # The URL is copied verbatim into a response header, so anything the
+    # caller built from user input must not smuggle control characters or
+    # stray query separators. Callers that embed a message already urlcode
+    # it, and ``%`` stays in the safe set so those stay intact.
+    url = quote(url, safe="/:?=&;()+,%*~")
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers={"HX-Redirect": url})
     return Response(status_code=303, headers={"Location": url})

@@ -24,10 +24,16 @@ from sqlalchemy import func, select
 
 from ..config import DATA_DIR
 from ..models import Book, ReadingGoal, Status
+from .isbn_lookup import normalize_isbn
 from .jsonstore import file_lock, load_json, save_json
 
 GOALS_FILE = DATA_DIR / "goals.json"
 WANT_LIST_FILE = DATA_DIR / "want_list.json"
+#: Cap on the want-to-read list: the API accepts entries as bare JSON, so an
+#: unbounded POST must not be able to grow the file without limit.
+MAX_WANT_ENTRIES = 500
+#: Length cap for the free-text fields of one entry (same reason).
+_WANT_FIELD_LEN = 300
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -266,6 +272,11 @@ def record_read(db, user_id: int | None = None, pages: int = 0) -> None:
 def _migrate_legacy_goals(db, user_id: int | None) -> None:
     """Move a device's old ``goals.json`` into the table, once."""
     path = _scoped_path(GOALS_FILE, user_id)
+    if not path.exists() and user_id is not None and GOALS_FILE.exists():
+        # A hosted server that predates the per-account split: the shared
+        # pre-upgrade file belongs to whoever claims it first, the same
+        # one-time migration the want-list file follows.
+        path = GOALS_FILE
     if not path.exists():
         return
     if db.scalars(select(ReadingGoal).where(_scope(user_id))).first() is not None:
@@ -314,22 +325,49 @@ def load_want_list(user_id: int | None = None) -> list[dict]:
     return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
 
+def _clean_want_entry(entry: Any) -> dict | None:
+    """Keep only the fields the clients define, as bounded strings.
+
+    ``POST /api/wantlist`` hands us the body verbatim: without this shape
+    check, one request could grow the want-list file with megabytes of junk
+    or nest arbitrary JSON inside it.
+    """
+    if not isinstance(entry, dict):
+        return None
+    cleaned: dict[str, Any] = {}
+    for key in ("id", "isbn", "title", "authors", "publisher", "notes", "added_at"):
+        value = entry.get(key)
+        if value is None:
+            cleaned[key] = None
+        elif isinstance(value, str):
+            cleaned[key] = value[:_WANT_FIELD_LEN]
+        else:
+            return None
+    return cleaned
+
+
 def add_want_entry(entry: dict, user_id: int | None = None) -> None:
     """Append an entry, deduplicating by ISBN (or title) when present."""
-    if not isinstance(entry, dict):
+    entry = _clean_want_entry(entry)
+    if entry is None:
         return
     with file_lock(_scoped_path(WANT_LIST_FILE, user_id)):
         data = _read_scoped(WANT_LIST_FILE, [], user_id, locked=True)
         items = [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
-        isbn = (entry.get("isbn") or "").strip()
+        # Compare ISBNs in normalised form, so a hyphenated copy of the
+        # same book cannot sneak past the deduplication.
+        isbn = normalize_isbn(entry.get("isbn") or "")
         title = (entry.get("title") or "").strip().casefold()
         if isbn:
-            items = [i for i in items if (i.get("isbn") or "").strip() != isbn]
+            items = [i for i in items if normalize_isbn(str(i.get("isbn") or "")) != isbn]
         elif title:
             items = [
                 i for i in items if (i.get("title") or "").strip().casefold() != title
             ]
         items.append(entry)
+        if len(items) > MAX_WANT_ENTRIES:
+            # Newest entries survive; the list cannot grow without bound.
+            items = items[-MAX_WANT_ENTRIES:]
         _write_scoped(WANT_LIST_FILE, items, user_id)
 
 
