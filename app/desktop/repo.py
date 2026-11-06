@@ -115,7 +115,17 @@ class Repo(ABC):
     @abstractmethod
     def return_book(self, book_id: int) -> None: ...
 
+    def cover_base(self) -> str | None:
+        """Host that serves the catalogue's cover art, for relative ``/covers/`` URLs.
+
+        :meth:`app.desktop.cover.cover_source` turns a stored ``cover_url`` into
+        something Qt can fetch; uploaded covers are stored as a path relative to
+        the web app, so a remote back-end has to qualify it with its own host.
+        """
+        return None
+
     # -- statuses ---------------------------------------------------------- #
+
     @abstractmethod
     def list_statuses(self) -> list[dict]: ...
 
@@ -443,6 +453,9 @@ class RemoteRepo(Repo):
     @property
     def description(self) -> str:
         return self.base_url or _("Remote server")
+
+    def cover_base(self) -> str | None:
+        return self.base_url or None
 
     def close(self) -> None:
         self._client.close()

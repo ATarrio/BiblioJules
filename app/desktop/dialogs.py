@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from ..book_fields import COVER_TYPES, READ_STATUSES, cover_type_label, read_status_label, score_label
 from ..i18n import _
 from ..services.isbn_lookup import is_valid_isbn, lookup_isbn, normalize_isbn
-from .cover import CoverImage
+from .cover import CoverImage, cover_source
 from .repo import RepoError, get_repo
 from .switch import Switch
 from .util import (
@@ -616,7 +616,7 @@ class BookDetailsDialog(QDialog):
 
         loans = repo.book_loans(self.book_id)
 
-        self.cover.load(book.get("cover_url"), book.get("title") or "")
+        self.cover.load(cover_source(book.get("cover_url"), repo.cover_base()), book.get("title") or "")
         self.title_label.setText(book.get("title") or _("Untitled"))
         self.subtitle_label.setText(book.get("subtitle") or "")
         self.subtitle_label.setVisible(bool(book.get("subtitle")))

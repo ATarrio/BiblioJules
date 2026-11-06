@@ -1,4 +1,4 @@
-"""Catalog view: filterable table of books with add/edit/lend/return actions."""
+"""Catalog view: filterable table of books with cover art and add/edit/lend/return actions."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from .util import (
     page_header,
     status_choices,
 )
+from .cover import CoverImage, cover_source
 from .dialogs import BookDetailsDialog, BookDialog, LendDialog
 from .workers import run_blocking
 
@@ -45,6 +46,13 @@ _SORTS = [
     ("saga", "Saga"),
 ]
 _LOANED = [(None, "Any"), ("loaned", "On loan"), ("available", "Available")]
+
+#: Cover thumbnail width in the first column; it keeps the 2:3 shape of the
+#: phone's book tiles and the dashboard cards, just smaller so that a whole
+#: shelf still reads as a list.
+_COVER_WIDTH = 72
+_COVER_HEIGHT = round(_COVER_WIDTH * 3 / 2)
+_COVER_COLUMN = _COVER_WIDTH + 12
 
 
 class CatalogView(QWidget):
@@ -103,9 +111,10 @@ class CatalogView(QWidget):
         filter_layout.addLayout(top_row)
         filter_layout.addLayout(bottom_row)
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels(
             [
+                "",
                 _("Title"),
                 _("Author(s)"),
                 _("Saga"),
@@ -123,10 +132,15 @@ class CatalogView(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(38)
+        # Fixed rows so every cover has its own full row and a long list
+        # scrolls instead of squeezing every book into the window's height.
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(_COVER_HEIGHT + 8)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for column in range(1, 9):
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(0, _COVER_COLUMN)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for column in range(2, 10):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemDoubleClicked.connect(lambda *_: self._details())
 
@@ -135,18 +149,18 @@ class CatalogView(QWidget):
         self._sort = ColumnSort(
             self.table,
             {
-                0: lambda row: (row["title"] or "").casefold(),
-                1: lambda row: ", ".join(row.get("authors") or []).casefold(),
-                2: lambda row: self._saga_text(row).casefold(),
-                3: lambda row: (read_status_label(row.get("read_status")) or "").casefold(),
-                4: lambda row: (row.get("score") is None, row.get("score") or 0),
-                5: lambda row: self._status_text(row).casefold(),
-                6: lambda row: ((row.get("location") or {}).get("full_path") or "").casefold(),
-                7: lambda row: (
+                1: lambda row: (row["title"] or "").casefold(),
+                2: lambda row: ", ".join(row.get("authors") or []).casefold(),
+                3: lambda row: self._saga_text(row).casefold(),
+                4: lambda row: (read_status_label(row.get("read_status")) or "").casefold(),
+                5: lambda row: (row.get("score") is None, row.get("score") or 0),
+                6: lambda row: self._status_text(row).casefold(),
+                7: lambda row: ((row.get("location") or {}).get("full_path") or "").casefold(),
+                8: lambda row: (
                     row.get("published_year") is None,
                     row.get("published_year") or 0,
                 ),
-                8: lambda row: self._loan_text(row).casefold(),
+                9: lambda row: self._loan_text(row).casefold(),
             },
             self._render_rows,
         )
@@ -326,8 +340,17 @@ class CatalogView(QWidget):
         self.table.setRowCount(len(rows))
         count = len(rows)
         self.summary.setText(i18n.ngettext("%d book", "%d books", count) % count)
+
+        # Uploaded covers are stored as a path relative to the server, so a
+        # remote catalogue needs its host put back before Qt can fetch one.
+        base_url = get_repo().cover_base()
         for row_index, row in enumerate(rows):
             status = row.get("status") or {}
+
+            cover = CoverImage(_COVER_WIDTH)
+            cover.load(cover_source(row.get("cover_url"), base_url), row["title"])
+            self.table.setCellWidget(row_index, 0, cover)
+
             values = [
                 row["title"],
                 ", ".join(row.get("authors") or []) or _("Unknown author"),
@@ -339,11 +362,11 @@ class CatalogView(QWidget):
                 str(row.get("published_year") or ""),
                 self._loan_text(row),
             ]
-            for column, text in enumerate(values):
+            for column, text in enumerate(values, start=1):
                 item = QTableWidgetItem(text)
-                if column == 0:
+                if column == 1:
                     item.setData(Qt.ItemDataRole.UserRole, row["id"])
-                if column == 5 and status.get("color"):
+                if column == 6 and status.get("color"):
                     item.setForeground(QColor(status["color"]))
                 self.table.setItem(row_index, column, item)
 
@@ -352,7 +375,7 @@ class CatalogView(QWidget):
         row = self.table.currentRow()
         if row < 0:
             return None
-        item = self.table.item(row, 0)
+        item = self.table.item(row, 1)
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     def _require_selection(self) -> int | None:

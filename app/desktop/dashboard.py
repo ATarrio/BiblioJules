@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .cover import CoverImage
+from .cover import CoverImage, cover_source
 from .repo import RemoteRepo, get_repo
 from .dialogs import BookDetailsDialog
 from .theme import AMBER, EMERALD, VIOLET, accent
@@ -262,7 +262,7 @@ class DashboardView(QWidget):
         cover = CoverImage(_COVER_WIDTH)
         # No title in the fallback: at this size the text would be cramped, and
         # the title is already printed right next to the thumbnail.
-        cover.load(row.get("cover_url"))
+        cover.load(cover_source(row.get("cover_url"), get_repo().cover_base()))
         layout.addWidget(cover, 0, Qt.AlignmentFlag.AlignTop)
 
         column = QVBoxLayout()

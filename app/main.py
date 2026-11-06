@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -33,10 +33,13 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 #: The UI loads its libraries from CDNs (base.html: Tailwind Play, HTMX on
 #: unpkg, Alpine on jsDelivr, Google Fonts), book covers may be absolute
 #: https URLs, and the inline theme boot script plus inline style attributes
-#: need 'unsafe-inline'. /docs adds Swagger UI, also served from jsDelivr.
+#: need 'unsafe-inline'. 'unsafe-eval' is required too: Alpine.js compiles
+#: every x-* attribute expression with new Function, without it the whole
+#: Alpine layer (modals, themes, stats) silently refuses to run.
+#: /docs adds Swagger UI, also served from jsDelivr.
 CONTENT_SECURITY_POLICY = "; ".join(
     (
-        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com "
         "https://unpkg.com https://cdn.jsdelivr.net",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
         "https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
@@ -88,7 +91,8 @@ def create_app() -> FastAPI:
     # Dynamic, authenticated content must also never sit in a shared cache —
     # only the immutable /static assets and the uploaded /covers images may.
     @app.middleware("http")
-    async def security_headers(request: Request, response: Response) -> Response:
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
